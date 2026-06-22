@@ -1,0 +1,23 @@
+# Core ML / vision
+tensorflow>=2.15.0
+mediapipe>=0.10.9
+opencv-python>=4.9.0
+scikit-learn>=1.4.0
+
+# Data handling
+numpy>=1.26.0
+pandas>=2.2.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# GUI — web-based frontend via pywebview (Edge WebView2 on Windows 11)
+pywebview>=4.4
+
+# Text-to-speech
+pyttsx3>=2.90
+
+# Utilities
+Pillow>=10.2.0
+kagglehub>=0.2.0
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.14

@@ -1,0 +1,95 @@
+============================================================
+  ASL Alphabet Classifier - Full Results
+============================================================
+
+--- Data split ---
+  Train / Val / Test  :  70 % / 15 % / 15 %
+  Test samples        :  8,662
+
+--- Model architecture (Keras MLP) ---
+  Hidden layers       :  [256, 128, 64]
+  Dropout rate        :  0.3
+  Total parameters    :  60,888
+
+--- Training configuration ---
+  Epochs (max)        :  50
+  Epochs run          :  50
+  Batch size          :  64
+  Learning rate       :  0.001
+  Augmentation copies :  3  (noise std = 0.015)
+  Training time       :  734.6 s
+
+--- Accuracy comparison (Table 4.2) ---
+  Keras MLP           :  0.9896  (98.96 %)
+  RandomForest base   :  0.9841  (98.41 %)
+  Improvement         :  +0.55 pp
+
+--- Efficiency metrics (Table 4.5) ---
+  Inference latency   :  0.756 ms / sample
+  Implied FPS         :  1322 frames / second
+  Model file size     :  760.2 KB  (0.74 MB)
+
+--- Per-class metrics - Keras MLP ---
+              precision    recall  f1-score   support
+
+           A       0.99      0.99      0.99       344
+           B       0.99      1.00      0.99       338
+           C       0.99      1.00      1.00       318
+           D       0.99      0.99      0.99       387
+           E       0.99      0.99      0.99       352
+           F       1.00      1.00      1.00       436
+           G       0.99      1.00      0.99       384
+           H       1.00      0.99      1.00       371
+           I       0.98      0.98      0.98       371
+           K       0.99      0.99      0.99       411
+           L       1.00      0.99      1.00       390
+           M       0.96      0.97      0.97       294
+           N       0.95      0.96      0.95       229
+           O       0.99      0.99      0.99       352
+           P       1.00      0.98      0.99       319
+           Q       0.99      1.00      1.00       334
+           R       0.98      0.98      0.98       393
+           S       0.98      0.99      0.99       396
+           T       0.99      0.99      0.99       360
+           U       0.98      0.98      0.98       384
+           V       1.00      0.99      1.00       389
+           W       0.99      0.99      0.99       378
+           X       1.00      0.99      0.99       336
+           Y       1.00      0.99      0.99       396
+
+    accuracy                           0.99      8662
+   macro avg       0.99      0.99      0.99      8662
+weighted avg       0.99      0.99      0.99      8662
+
+
+--- Per-class metrics - RandomForest baseline ---
+              precision    recall  f1-score   support
+
+           A       0.99      0.99      0.99       344
+           B       0.99      1.00      0.99       338
+           C       0.98      0.99      0.99       318
+           D       0.97      0.99      0.98       387
+           E       0.98      0.99      0.99       352
+           F       0.99      0.99      0.99       436
+           G       0.99      1.00      1.00       384
+           H       0.99      1.00      0.99       371
+           I       0.99      0.97      0.98       371
+           K       1.00      0.99      0.99       411
+           L       1.00      0.99      0.99       390
+           M       0.92      0.93      0.93       294
+           N       0.89      0.93      0.91       229
+           O       0.98      0.97      0.97       352
+           P       1.00      0.97      0.98       319
+           Q       0.97      1.00      0.99       334
+           R       0.98      0.99      0.98       393
+           S       0.99      0.99      0.99       396
+           T       0.99      0.99      0.99       360
+           U       0.99      0.98      0.98       384
+           V       0.99      0.99      0.99       389
+           W       0.99      0.98      0.99       378
+           X       0.99      0.99      0.99       336
+           Y       1.00      0.99      0.99       396
+
+    accuracy                           0.98      8662
+   macro avg       0.98      0.98      0.98      8662
+weighted avg       0.98      0.98      0.98      8662
