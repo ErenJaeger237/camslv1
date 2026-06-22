@@ -1,14 +1,3 @@
-/**
- * SignToText.tsx — webcam panel that runs MediaPipe + TF.js in the browser.
- *
- * Architecture:
- *  - <video> element captures webcam via getUserMedia
- *  - requestAnimationFrame loop calls MediaPipe detect() each frame
- *  - Normalised landmarks fed to TF.js predict()
- *  - WordBuilder accumulates stable predictions into words/sentences
- *  - Autocomplete suggestions fetched from FastAPI when word prefix changes
- */
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaPipe } from "../hooks/useMediaPipe";
 import { useInference } from "../hooks/useInference";
@@ -18,6 +7,7 @@ import { speak } from "../lib/tts";
 import { getAutocomplete } from "../lib/api";
 import { useAppStore } from "../store/appStore";
 import { cn } from "../lib/utils";
+import { VolumeIcon, DeleteIcon, XIcon } from "./icons";
 
 const builder = new WordBuilder();
 
@@ -28,9 +18,9 @@ export function SignToText() {
 
   const [camError, setCamError] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
-  const fpsCounterRef = useRef({ frames: 0, last: performance.now() });
+  const fpsRef = useRef({ frames: 0, last: performance.now() });
 
-  const { ready: mpReady, error: mpError, detect } = useMediaPipe();
+  const { ready: mpReady, error: mpError, loadingMsg, detect } = useMediaPipe();
   const { ready: tfReady, predict } = useInference();
 
   const { setSignResult, setSuggestions, suggestions } = useAppStore();
@@ -38,13 +28,15 @@ export function SignToText() {
   const [localSentence, setLocalSentence] = useState("");
   const [localLetter, setLocalLetter] = useState("");
   const [localConf, setLocalConf] = useState(0);
+  const lastWordRef = useRef("");
 
   // Start webcam
   useEffect(() => {
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: "user" },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+          audio: false,
         });
         streamRef.current = stream;
         if (videoRef.current) {
@@ -52,7 +44,8 @@ export function SignToText() {
           await videoRef.current.play();
         }
       } catch (e) {
-        setCamError("Could not access webcam: " + String(e));
+        setCamError("Webcam access denied. Check browser permissions and try again.");
+        console.error(e);
       }
     })();
     return () => {
@@ -61,58 +54,43 @@ export function SignToText() {
     };
   }, []);
 
-  const lastWordRef = useRef("");
   const loop = useCallback(() => {
     rafRef.current = requestAnimationFrame(loop);
-
     const video = videoRef.current;
     if (!video || video.readyState < 2 || !mpReady) return;
 
-    // FPS counter
+    // FPS
     const now = performance.now();
-    fpsCounterRef.current.frames++;
-    if (now - fpsCounterRef.current.last >= 1000) {
-      setFps(fpsCounterRef.current.frames);
-      fpsCounterRef.current = { frames: 0, last: now };
+    fpsRef.current.frames++;
+    if (now - fpsRef.current.last >= 1000) {
+      setFps(fpsRef.current.frames);
+      fpsRef.current = { frames: 0, last: now };
     }
 
     const { landmarks } = detect(video);
-
     let pred = null;
     if (landmarks && tfReady) {
-      const features = normaliseLandmarks(landmarks);
-      pred = predict(features);
+      pred = predict(normaliseLandmarks(landmarks));
     }
 
-    const committed = builder.update(
-      pred?.letter ?? null,
-      pred?.confidence ?? 0,
-    );
-
+    const committed = builder.update(pred?.letter ?? null, pred?.confidence ?? 0);
     const word = builder.currentWord;
     const sentence = builder.sentence;
-    const letter = pred?.letter ?? "";
-    const conf = pred?.confidence ?? 0;
 
-    setLocalLetter(letter);
-    setLocalConf(conf);
+    setLocalLetter(pred?.letter ?? "");
+    setLocalConf(pred?.confidence ?? 0);
     setLocalWord(word);
     setLocalSentence(sentence);
-    setSignResult(letter, conf, word, sentence);
+    setSignResult(pred?.letter ?? "", pred?.confidence ?? 0, word, sentence);
 
-    // Fetch autocomplete when the word changes
     if (committed || word !== lastWordRef.current) {
       lastWordRef.current = word;
       if (word.length >= 2) {
         getAutocomplete(word)
-          .then((r) => {
-            builder.setSuggestions(r.suggestions);
-            setSuggestions(r.suggestions);
-          })
+          .then((r) => { builder.setSuggestions(r.suggestions); setSuggestions(r.suggestions); })
           .catch(() => {});
       } else {
-        builder.setSuggestions([]);
-        setSuggestions([]);
+        builder.setSuggestions([]); setSuggestions([]);
       }
     }
   }, [mpReady, tfReady, detect, predict, setSignResult, setSuggestions]);
@@ -124,104 +102,106 @@ export function SignToText() {
 
   const handleClear = () => {
     builder.clear();
-    setLocalWord("");
-    setLocalSentence("");
-    setLocalLetter("");
-    setLocalConf(0);
-    setSuggestions([]);
-    setSignResult("", 0, "", "");
+    setLocalWord(""); setLocalSentence(""); setLocalLetter(""); setLocalConf(0);
+    setSuggestions([]); setSignResult("", 0, "", "");
   };
-
-  const handleBackspace = () => {
-    builder.backspace();
-    setLocalWord(builder.currentWord);
-    setLocalSentence(builder.sentence);
-  };
-
-  const handleSpeak = () => {
-    const text = builder.fullText;
-    if (text) speak(text);
-  };
-
-  const handleSuggestion = (word: string) => {
-    builder.acceptSuggestion(word);
-    setLocalWord(builder.currentWord);
-    setLocalSentence(builder.sentence);
-    setSuggestions([]);
+  const handleBackspace = () => { builder.backspace(); setLocalWord(builder.currentWord); setLocalSentence(builder.sentence); };
+  const handleSpeak = () => { const t = builder.fullText; if (t) speak(t); };
+  const handleSuggestion = (w: string) => {
+    builder.acceptSuggestion(w);
+    setLocalWord(builder.currentWord); setLocalSentence(builder.sentence); setSuggestions([]);
   };
 
   const fullText = (localSentence + localWord).trim();
+  const confPct = Math.round(localConf * 100);
 
   return (
     <div className="flex gap-4 p-4 h-full">
-      {/* Left — webcam */}
-      <div className="flex-1 flex flex-col gap-3">
-        <div className="relative rounded-xl overflow-hidden bg-navy-800 aspect-video">
+      {/* ── Webcam column ── */}
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+
+        {/* Camera card */}
+        <div className="relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl shadow-black/30 flex-1 min-h-0">
           <video
             ref={videoRef}
             className="w-full h-full object-cover scale-x-[-1]"
             muted
             playsInline
           />
-          {/* Overlays */}
-          <div className="absolute top-2 left-2 flex gap-2">
-            <span className="bg-black/60 text-xs px-2 py-0.5 rounded-full text-slate-300">
+
+          {/* Top-left status chips */}
+          <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
+            <span className="bg-black/50 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-slate-300 font-mono border border-white/10">
               {fps} fps
             </span>
             {mpReady && (
-              <span className="bg-teal-600/80 text-xs px-2 py-0.5 rounded-full">
+              <span className="bg-teal-600/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
                 MediaPipe ✓
               </span>
             )}
             {tfReady && (
-              <span className="bg-teal-600/80 text-xs px-2 py-0.5 rounded-full">
+              <span className="bg-teal-600/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
                 TF.js ✓
               </span>
             )}
           </div>
 
-          {/* Current letter badge */}
-          {localLetter && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center">
-              <span className="text-6xl font-bold text-teal-400 drop-shadow-lg">
-                {localLetter}
-              </span>
-              <div className="w-32 h-1.5 bg-navy-800 rounded-full overflow-hidden mt-1">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all",
-                    localConf > 0.9 ? "bg-teal-400" : localConf > 0.7 ? "bg-yellow-400" : "bg-red-400",
-                  )}
-                  style={{ width: `${localConf * 100}%` }}
-                />
+          {/* Letter overlay */}
+          {localLetter && mpReady && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
+              <div className="bg-navy-900/80 backdrop-blur-sm border border-teal-500/30 rounded-2xl px-6 py-3 flex flex-col items-center shadow-xl">
+                <span className="text-7xl font-bold text-teal-400 leading-none" style={{ fontFamily: "'Fira Code', monospace" }}>
+                  {localLetter}
+                </span>
+                <div className="w-28 h-1.5 bg-navy-700 rounded-full overflow-hidden mt-2">
+                  <div
+                    className={cn("h-full rounded-full transition-all duration-150",
+                      localConf > 0.9 ? "bg-teal-400" : localConf > 0.75 ? "bg-yellow-400" : "bg-red-400"
+                    )}
+                    style={{ width: `${confPct}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-0.5">{confPct}% confidence</span>
               </div>
             </div>
           )}
 
-          {(camError || mpError) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-red-400 text-sm p-4 text-center">
-              {camError ?? mpError}
-            </div>
-          )}
-
+          {/* Loading overlay */}
           {!mpReady && !mpError && !camError && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-              <div className="text-center">
-                <div className="w-8 h-8 border-2 border-teal-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-sm text-slate-300">Loading MediaPipe…</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-navy-900/80 backdrop-blur-sm gap-4">
+              <div className="w-12 h-12 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-slate-300 text-center max-w-xs">{loadingMsg}</p>
+              <p className="text-xs text-slate-500">First load downloads ~10 MB — cached after</p>
+            </div>
+          )}
+
+          {/* Error overlay */}
+          {(camError || mpError) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-navy-900/90 backdrop-blur-sm gap-3 p-6">
+              <div className="w-12 h-12 rounded-2xl bg-red-900/60 border border-red-700/50 flex items-center justify-center">
+                <XIcon className="w-6 h-6 text-red-400" />
               </div>
+              <p className="text-sm text-red-300 text-center max-w-xs">{camError ?? mpError}</p>
+              {camError && (
+                <button
+                  onClick={() => window.location.reload()}
+                  className="mt-1 px-4 py-1.5 rounded-xl bg-red-800/60 hover:bg-red-700/60 text-sm text-red-200 transition-colors cursor-pointer border border-red-700/40"
+                >
+                  Reload page
+                </button>
+              )}
             </div>
           )}
         </div>
 
-        {/* Autocomplete */}
+        {/* Autocomplete row */}
         {suggestions.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             {suggestions.map((s) => (
               <button
                 key={s}
                 onClick={() => handleSuggestion(s)}
-                className="px-3 py-1 bg-navy-700 hover:bg-teal-600 text-sm rounded-lg transition-colors border border-navy-600"
+                className="px-4 py-1.5 bg-navy-700 hover:bg-teal-600 text-sm rounded-xl transition-all duration-200 border border-navy-600 hover:border-teal-500 cursor-pointer font-medium shadow"
               >
                 {s}
               </button>
@@ -230,60 +210,66 @@ export function SignToText() {
         )}
       </div>
 
-      {/* Right — text output */}
-      <div className="w-80 flex flex-col gap-3">
-        {/* Current word */}
-        <div className="bg-navy-800 rounded-xl p-4 border border-navy-700">
-          <p className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Current Word</p>
-          <p className="text-3xl font-mono text-teal-400 min-h-[2.5rem]">
-            {localWord || <span className="text-slate-600">…</span>}
+      {/* ── Output column ── */}
+      <div className="w-72 flex flex-col gap-3 shrink-0">
+
+        {/* Current letter card */}
+        <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow-lg">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 font-semibold">Signing</p>
+          <p className="text-4xl font-bold text-teal-400 min-h-[3rem] leading-tight" style={{ fontFamily: "'Fira Code', monospace" }}>
+            {localWord || <span className="text-slate-600 font-normal text-2xl">waiting…</span>}
           </p>
         </div>
 
-        {/* Full text */}
-        <div className="bg-navy-800 rounded-xl p-4 border border-navy-700 flex-1">
-          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Text</p>
-          <p className="text-base text-white leading-relaxed min-h-[4rem] break-words">
-            {localSentence}
-            {localWord && (
-              <span className="text-teal-400">{localWord}</span>
-            )}
-            {!fullText && <span className="text-slate-600">Start signing…</span>}
-          </p>
+        {/* Full text card */}
+        <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow-lg flex-1">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 font-semibold">Text</p>
+          <div className="text-[15px] text-white leading-relaxed break-words min-h-[5rem]">
+            {localSentence && <span className="text-slate-300">{localSentence}</span>}
+            {localWord && <span className="text-teal-400 font-semibold">{localWord}</span>}
+            {!fullText && <span className="text-slate-600 text-sm">Start signing to build words…</span>}
+          </div>
         </div>
 
-        {/* Actions */}
+        {/* Action buttons */}
         <div className="flex gap-2">
           <button
             onClick={handleSpeak}
             disabled={!fullText}
-            className="flex-1 py-2 rounded-lg bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold text-sm transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold text-sm transition-all duration-200 cursor-pointer shadow-lg shadow-teal-900/40"
           >
-            🔊 Speak
+            <VolumeIcon className="w-4 h-4" />
+            Speak
           </button>
           <button
             onClick={handleBackspace}
-            className="px-3 py-2 rounded-lg bg-navy-700 hover:bg-navy-600 text-sm transition-colors"
+            className="w-10 flex items-center justify-center rounded-xl bg-navy-700 hover:bg-navy-600 transition-colors cursor-pointer border border-navy-600"
+            title="Backspace"
           >
-            ⌫
+            <DeleteIcon className="w-4 h-4" />
           </button>
           <button
             onClick={handleClear}
-            className="px-3 py-2 rounded-lg bg-navy-700 hover:bg-red-900 text-sm transition-colors"
+            className="w-10 flex items-center justify-center rounded-xl bg-navy-700 hover:bg-red-900/60 transition-colors cursor-pointer border border-navy-600"
+            title="Clear"
           >
-            ✕
+            <XIcon className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Sign reference strip */}
-        <div className="bg-navy-800 rounded-xl p-3 border border-navy-700">
-          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Sign Reference</p>
+        {/* Letter reference grid */}
+        <div className="bg-navy-800 rounded-2xl p-3 border border-navy-700/60 shadow">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2.5 font-semibold">Alphabet</p>
           <div className="grid grid-cols-6 gap-1">
             {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
               <button
                 key={l}
-                className="aspect-square flex items-center justify-center text-xs font-mono rounded bg-navy-700 hover:bg-teal-700 transition-colors"
-                title={l}
+                className={cn(
+                  "aspect-square flex items-center justify-center text-xs font-mono rounded-lg transition-all duration-150 cursor-pointer border",
+                  localLetter === l
+                    ? "bg-teal-500 text-navy-950 font-bold border-teal-400"
+                    : "bg-navy-700 hover:bg-navy-600 text-slate-300 border-navy-600"
+                )}
                 onClick={() => speak(l)}
               >
                 {l}

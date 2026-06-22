@@ -2,28 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
+  *, *::before, *::after { box-sizing: border-box; }
 
   html, body, #root {
     height: 100%;
     margin: 0;
     padding: 0;
-    background-color: #070e1a;
-    color: white;
-    font-family: "Inter", system-ui, sans-serif;
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
+  body {
+    background-color: #070e1a;
+    color: white;
+    font-family: 'Fira Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  ::-webkit-scrollbar-track {
-    background: #0d1b2a;
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2bc4c2; border-radius: 99px; }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
-  ::-webkit-scrollbar-thumb {
-    background: #2bc4c2;
-    border-radius: 3px;
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: 'Fira Code', ui-monospace, monospace;
   }
 }

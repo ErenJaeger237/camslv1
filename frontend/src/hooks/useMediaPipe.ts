@@ -1,10 +1,6 @@
 /**
- * useMediaPipe.ts — runs HandLandmarker in the browser via WASM.
- *
- * Uses the npm @mediapipe/tasks-vision package. WASM binaries are loaded
- * from the CDN so they don't bloat the Vite bundle.
- *
- * Returns a `detect(video)` function you call each animation frame.
+ * useMediaPipe.ts — HandLandmarker in the browser via WASM.
+ * Tries GPU delegate first, falls back to CPU automatically.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,20 +25,34 @@ export function useMediaPipe() {
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMsg, setLoadingMsg] = useState("Downloading MediaPipe model…");
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
+        setLoadingMsg("Loading WASM runtime…");
         const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
-        const hl = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: MODEL_URL,
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numHands: 1,
-        });
+
+        setLoadingMsg("Loading hand detection model…");
+
+        // Try GPU first; fall back to CPU silently
+        let hl: HandLandmarker;
+        try {
+          hl = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+            runningMode: "VIDEO",
+            numHands: 1,
+          });
+        } catch {
+          hl = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+            runningMode: "VIDEO",
+            numHands: 1,
+          });
+        }
+
         if (cancelled) { hl.close(); return; }
         landmarkerRef.current = hl;
         setReady(true);
@@ -50,6 +60,7 @@ export function useMediaPipe() {
         if (!cancelled) setError(String(e));
       }
     })();
+
     return () => {
       cancelled = true;
       landmarkerRef.current?.close();
@@ -59,15 +70,10 @@ export function useMediaPipe() {
 
   const detect = useCallback(
     (video: HTMLVideoElement): DetectResult => {
-      if (!landmarkerRef.current || !ready) {
-        return { landmarks: null, handedness: null };
-      }
+      if (!landmarkerRef.current || !ready) return { landmarks: null, handedness: null };
       const result: HandLandmarkerResult =
         landmarkerRef.current.detectForVideo(video, performance.now());
-
-      if (!result.landmarks || result.landmarks.length === 0) {
-        return { landmarks: null, handedness: null };
-      }
+      if (!result.landmarks?.length) return { landmarks: null, handedness: null };
       return {
         landmarks: result.landmarks[0] as RawLandmark[],
         handedness: result.handedness?.[0]?.[0]?.categoryName ?? null,
@@ -76,5 +82,5 @@ export function useMediaPipe() {
     [ready],
   );
 
-  return { ready, error, detect };
+  return { ready, error, loadingMsg, detect };
 }
