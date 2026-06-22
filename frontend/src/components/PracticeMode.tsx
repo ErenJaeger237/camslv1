@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaPipe } from "../hooks/useMediaPipe";
 import { useInference } from "../hooks/useInference";
 import { normaliseLandmarks } from "../lib/landmarks";
+import { drawSkeleton, clearCanvas } from "../lib/skeleton";
 import { initPractice, recordPracticeResult } from "../lib/api";
 import { useAppStore } from "../store/appStore";
 import { cn } from "../lib/utils";
@@ -11,6 +12,7 @@ const HOLD_FRAMES = 20;
 
 export function PracticeMode() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -59,6 +61,19 @@ export function PracticeMode() {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || !mpReady || !practiceTarget || feedback) return;
     const { landmarks } = detect(video);
+
+    // Draw skeleton
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        if (landmarks) drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
+        else clearCanvas(ctx, canvas.width, canvas.height);
+      }
+    }
+
     if (!landmarks) { holdRef.current = []; return; }
     const pred = tfReady ? predict(normaliseLandmarks(landmarks)) : null;
     if (!pred || pred.confidence < 0.85) { holdRef.current = []; return; }
@@ -77,6 +92,7 @@ export function PracticeMode() {
       {/* Webcam */}
       <div className="flex-1 relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl">
         <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" muted playsInline />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none" />
 
         {feedback && (
           <div className={cn(

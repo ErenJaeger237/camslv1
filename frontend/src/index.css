@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+/* Fonts loaded via <link> in index.html — not here — to avoid COEP blocking */
 
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }

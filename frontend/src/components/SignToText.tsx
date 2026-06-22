@@ -3,6 +3,7 @@ import { useMediaPipe } from "../hooks/useMediaPipe";
 import { useInference } from "../hooks/useInference";
 import { WordBuilder } from "../lib/wordBuilder";
 import { normaliseLandmarks } from "../lib/landmarks";
+import { drawSkeleton, clearCanvas } from "../lib/skeleton";
 import { speak } from "../lib/tts";
 import { getAutocomplete } from "../lib/api";
 import { useAppStore } from "../store/appStore";
@@ -13,6 +14,7 @@ const builder = new WordBuilder();
 
 export function SignToText() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -68,6 +70,22 @@ export function SignToText() {
     }
 
     const { landmarks } = detect(video);
+
+    // Draw skeleton on canvas overlay
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        if (landmarks) {
+          drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
+        } else {
+          clearCanvas(ctx, canvas.width, canvas.height);
+        }
+      }
+    }
+
     let pred = null;
     if (landmarks && tfReady) {
       pred = predict(normaliseLandmarks(landmarks));
@@ -127,6 +145,11 @@ export function SignToText() {
             className="w-full h-full object-cover scale-x-[-1]"
             muted
             playsInline
+          />
+          {/* Skeleton overlay — same size/flip as video */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none"
           />
 
           {/* Top-left status chips */}
