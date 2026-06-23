@@ -26,13 +26,16 @@ import { OutputPass }      from "three/examples/jsm/postprocessing/OutputPass.js
 import { getLandmarks, HAND_CONNECTIONS } from "../lib/handPoses";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const CYAN    = 0x00f3ff;
-const BG      = 0x020b18;
-const JOINT_R = 0.030;
-const TIP_R   = 0.038;
-const BONE_R  = 0.018;
-const TIP_IDS = new Set([4, 8, 12, 16, 20]);
-const LERP_MS = 450;
+const CYAN         = 0x00f3ff;
+const BG           = 0x020b18;
+const JOINT_R      = 0.030;     // wireframe sphere radius
+const TIP_R        = 0.038;
+const BONE_R       = 0.018;     // wireframe cylinder radius
+const SKIN_JOINT_R = 0.052;     // skin is fatter — puffs out around the wireframe
+const SKIN_TIP_R   = 0.062;
+const SKIN_BONE_R  = 0.044;
+const TIP_IDS      = new Set([4, 8, 12, 16, 20]);
+const LERP_MS      = 450;
 
 // ── Reusable vectors (no per-frame allocations) ────────────────────────────────
 const _pa  = new THREE.Vector3();
@@ -73,17 +76,18 @@ const SKIN_FRAG = /* glsl */`
   varying vec3 vWorldPos;
 
   void main() {
-    // Fresnel: edges bright & opaque, centre near-transparent
-    float fresnel = pow(1.0 - max(dot(vNormal, vViewDir), 0.0), 3.0);
+    // Lower Fresnel power (1.8) → glow extends further from edges into centre
+    float cosA   = max(dot(vNormal, vViewDir), 0.0);
+    float fresnel = pow(1.0 - cosA, 1.8);
 
-    // Scrolling horizontal scanlines on world Y
-    float scan = sin(vWorldPos.y * 18.0 - uTime * 2.2) * 0.5 + 0.5;
-    scan = scan * scan;   // sharpen bands
+    // Additive scanlines only — never subtract from alpha
+    float scan = (sin(vWorldPos.y * 15.0 - uTime * 1.8) * 0.5 + 0.5) * 0.18;
 
-    float alpha      = clamp(fresnel * 0.42 + scan * 0.10 + 0.02, 0.0, 1.0);
-    float brightness = fresnel * 1.3 + scan * 0.25 + 0.06;
+    // 0.12 base ensures even centre-facing surfaces have ambient glow
+    float alpha  = clamp(fresnel * 0.52 + scan + 0.12, 0.0, 0.85);
+    float bright = fresnel * 1.3 + scan + 0.22;
 
-    gl_FragColor = vec4(uColor * brightness, alpha);
+    gl_FragColor = vec4(uColor * bright, alpha);
   }
 `;
 
@@ -118,9 +122,9 @@ function updateMeshes(
     bones[bi].scale.set(BONE_R, len, BONE_R);
     bones[bi].quaternion.setFromUnitVectors(_up, _dir);
 
-    // Skin bone mirrors wireframe bone exactly
+    // Skin bone is fatter than the wireframe
     skinBones[bi].position.copy(_mid);
-    skinBones[bi].scale.set(BONE_R, len, BONE_R);
+    skinBones[bi].scale.set(SKIN_BONE_R, len, SKIN_BONE_R);
     skinBones[bi].quaternion.copy(bones[bi].quaternion);
   }
 }
@@ -185,6 +189,7 @@ export function Hand3D({ letter }: { letter: string }) {
       transparent: true,
       blending:    THREE.AdditiveBlending,
       depthWrite:  false,
+      depthTest:   false,   // never occluded — all skin layers accumulate
       side:        THREE.DoubleSide,
     });
 
@@ -198,10 +203,10 @@ export function Hand3D({ letter }: { letter: string }) {
     group.position.set(0, -0.3, 0);
     scene.add(group);
 
-    // Skin layer rendered first (renderOrder 0) so wireframe sits on top
+    // Skin layer — uses larger radii so it visibly puffs out around the wireframe
     const skinJoints: THREE.Mesh[] = [];
     for (let i = 0; i < 21; i++) {
-      const r    = TIP_IDS.has(i) ? TIP_R : JOINT_R;
+      const r    = TIP_IDS.has(i) ? SKIN_TIP_R : SKIN_JOINT_R;
       const mesh = new THREE.Mesh(JOINT_SKIN_GEO, skinMat);
       mesh.scale.setScalar(r);
       mesh.renderOrder = 0;
