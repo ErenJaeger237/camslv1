@@ -43,10 +43,12 @@ export function SignToText() {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          // autoPlay handles playback — don't call .play() to avoid AbortError
+          // when React StrictMode double-invokes effects in development
         }
       } catch (e) {
-        setCamError("Camera blocked: " + String(e));
+        const msg = String(e);
+        if (!msg.includes("AbortError")) setCamError("Camera blocked: " + msg);
       }
     })();
     return () => {
@@ -167,6 +169,7 @@ export function SignToText() {
               <video
                 ref={videoRef}
                 className="w-full h-full object-cover scale-x-[-1]"
+                autoPlay
                 muted
                 playsInline
               />

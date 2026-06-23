@@ -27,7 +27,7 @@ export function DatasetPanel() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false }).catch(() => null);
       if (!stream) return;
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+      if (videoRef.current) videoRef.current.srcObject = stream;
     })();
     getContributionCounts().then((r) => { setCounts(r.counts); setTotal(r.total); }).catch(() => {});
     return () => { streamRef.current?.getTracks().forEach((t) => t.stop()); cancelAnimationFrame(rafRef.current); };
@@ -78,7 +78,7 @@ export function DatasetPanel() {
     <div className="flex gap-4 p-4 h-full">
       {/* Webcam */}
       <div className="flex-1 relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl">
-        <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" muted playsInline />
+        <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
         {capturing && (
           <div className="absolute inset-0 border-4 border-teal-400 rounded-2xl animate-pulse pointer-events-none" />
         )}

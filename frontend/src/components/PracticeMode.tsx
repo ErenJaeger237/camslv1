@@ -32,8 +32,10 @@ export function PracticeMode() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
         streamRef.current = stream;
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      } catch { setCamError("Webcam access denied."); }
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (e) {
+        if (!String(e).includes("AbortError")) setCamError("Webcam access denied.");
+      }
     })();
     return () => { streamRef.current?.getTracks().forEach((t) => t.stop()); cancelAnimationFrame(rafRef.current); };
   }, []);
@@ -91,7 +93,7 @@ export function PracticeMode() {
     <div className="flex gap-4 p-4 h-full">
       {/* Webcam */}
       <div className="flex-1 relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl">
-        <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" muted playsInline />
+        <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none" />
 
         {feedback && (
