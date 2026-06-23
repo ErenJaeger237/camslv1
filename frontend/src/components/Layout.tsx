@@ -76,9 +76,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Main */}
       <main className="flex-1 overflow-auto">{children}</main>
 
-      <footer className="border-t border-navy-800/50 px-6 py-2 text-[11px] text-slate-600 text-center">
-        CamSL Translator · MediaPipe + TF.js + React · Final Year Project
-      </footer>
+
     </div>
   );
 }
