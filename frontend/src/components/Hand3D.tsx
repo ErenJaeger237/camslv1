@@ -6,34 +6,53 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass }      from "three/examples/jsm/postprocessing/OutputPass.js";
 import { getLandmarks, HAND_CONNECTIONS } from "../lib/handPoses";
 
-const CYAN    = 0x00f3ff;
-const BG      = 0x020b18;
+// ── Wireframe cage (thin crisp edges) ─────────────────────────────────────────
 const JOINT_R = 0.030;
 const TIP_R   = 0.038;
 const BONE_R  = 0.018;
+
+// ── Skin tubes (solid geometry, significantly fatter than the cage) ────────────
+// 3-4× the wireframe radius so the translucent surface is clearly visible
+// around and between the inner skeleton lines.
+const SKIN_JOINT_R = 0.072;
+const SKIN_TIP_R   = 0.085;
+const SKIN_BONE_R  = 0.062;
+
+const CYAN    = 0x00f3ff;
+const BG      = 0x020b18;
 const TIP_IDS = new Set([4, 8, 12, 16, 20]);
 const LERP_MS = 450;
 
+// Reusable vectors — no per-frame heap allocations
 const _pa  = new THREE.Vector3();
 const _pb  = new THREE.Vector3();
 const _mid = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _up  = new THREE.Vector3(0, 1, 0);
 
+// Wireframe geometries (EdgesGeometry = just the structural edge lines)
 const JOINT_EDGE_GEO = new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 10, 7));
 const BONE_EDGE_GEO  = new THREE.EdgesGeometry(new THREE.CylinderGeometry(1, 1, 1, 8));
+
+// Skin geometries (solid closed meshes — these produce the visible surface)
+const SKIN_JOINT_GEO = new THREE.SphereGeometry(1, 14, 10);
+const SKIN_BONE_GEO  = new THREE.CylinderGeometry(1, 1, 1, 10);
 
 function lerp(a: number[], b: number[], t: number): number[] {
   return a.map((v, i) => v + (b[i] - v) * t);
 }
 
 function updateMeshes(
-  lms:    number[],
-  joints: THREE.LineSegments[],
-  bones:  THREE.LineSegments[],
+  lms:        number[],
+  joints:     THREE.LineSegments[],
+  bones:      THREE.LineSegments[],
+  skinJoints: THREE.Mesh[],
+  skinBones:  THREE.Mesh[],
 ): void {
   for (let i = 0; i < 21; i++) {
-    joints[i].position.set(lms[i * 3], lms[i * 3 + 1], lms[i * 3 + 2]);
+    const x = lms[i*3], y = lms[i*3+1], z = lms[i*3+2];
+    joints[i].position.set(x, y, z);
+    skinJoints[i].position.set(x, y, z);
   }
   for (let bi = 0; bi < HAND_CONNECTIONS.length; bi++) {
     const [a, b] = HAND_CONNECTIONS[bi];
@@ -42,9 +61,15 @@ function updateMeshes(
     _dir.subVectors(_pb, _pa).normalize();
     _mid.addVectors(_pa, _pb).multiplyScalar(0.5);
     const len = _pa.distanceTo(_pb);
+
     bones[bi].position.copy(_mid);
     bones[bi].scale.set(BONE_R, len, BONE_R);
     bones[bi].quaternion.setFromUnitVectors(_up, _dir);
+
+    // Skin tube is fatter but shares the same orientation
+    skinBones[bi].position.copy(_mid);
+    skinBones[bi].scale.set(SKIN_BONE_R, len, SKIN_BONE_R);
+    skinBones[bi].quaternion.copy(bones[bi].quaternion);
   }
 }
 
@@ -60,6 +85,8 @@ export function Hand3D({ letter }: { letter: string }) {
     group:      THREE.Group;
     joints:     THREE.LineSegments[];
     bones:      THREE.LineSegments[];
+    skinJoints: THREE.Mesh[];
+    skinBones:  THREE.Mesh[];
     ringMat:    THREE.LineBasicMaterial;
     rings:      THREE.LineLoop[];
     currentLms: number[];
@@ -74,6 +101,7 @@ export function Hand3D({ letter }: { letter: string }) {
     const w = el.clientWidth  || 300;
     const h = el.clientHeight || 300;
 
+    // ── Renderer ───────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
@@ -87,25 +115,68 @@ export function Hand3D({ letter }: { letter: string }) {
     camera.position.set(0.4, 1.2, 2.8);
     camera.lookAt(0, 0.9, 0);
 
+    // ── Skin material (Method 1) ───────────────────────────────────────────
+    // NormalBlending = real surface compositing (src*alpha + dst*(1-alpha)).
+    // depthTest:false so all tube layers accumulate — denser regions of the
+    // hand (palm, knuckles) become naturally more opaque as layers stack.
+    // DoubleSide so the inside of each tube also contributes.
+    const skinMat = new THREE.MeshBasicMaterial({
+      color:       CYAN,
+      transparent: true,
+      opacity:     0.18,
+      side:        THREE.DoubleSide,
+      depthWrite:  false,
+      depthTest:   false,
+    });
+
+    // ── Wireframe material ─────────────────────────────────────────────────
     const wireMat = new THREE.LineBasicMaterial({
-      color: CYAN, transparent: true, opacity: 0.90,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      color:       CYAN,
+      transparent: true,
+      opacity:     0.95,
+      blending:    THREE.AdditiveBlending,
+      depthWrite:  false,
     });
 
     const ringMat = new THREE.LineBasicMaterial({
-      color: CYAN, transparent: true, opacity: 0.28,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      color:       CYAN,
+      transparent: true,
+      opacity:     0.25,
+      blending:    THREE.AdditiveBlending,
+      depthWrite:  false,
     });
 
+    // ── Hand group ─────────────────────────────────────────────────────────
     const group = new THREE.Group();
     group.position.set(0, -0.3, 0);
     scene.add(group);
 
+    // Skin tubes — renderOrder 0, drawn first so wireframe sits on top
+    const skinJoints: THREE.Mesh[] = [];
+    for (let i = 0; i < 21; i++) {
+      const r    = TIP_IDS.has(i) ? SKIN_TIP_R : SKIN_JOINT_R;
+      const mesh = new THREE.Mesh(SKIN_JOINT_GEO, skinMat);
+      mesh.scale.setScalar(r);
+      mesh.renderOrder = 0;
+      group.add(mesh);
+      skinJoints.push(mesh);
+    }
+
+    const skinBones: THREE.Mesh[] = [];
+    for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
+      const mesh = new THREE.Mesh(SKIN_BONE_GEO, skinMat);
+      mesh.renderOrder = 0;
+      group.add(mesh);
+      skinBones.push(mesh);
+    }
+
+    // Wireframe cage — renderOrder 1, sits on top of the skin
     const joints: THREE.LineSegments[] = [];
     for (let i = 0; i < 21; i++) {
       const r    = TIP_IDS.has(i) ? TIP_R : JOINT_R;
       const mesh = new THREE.LineSegments(JOINT_EDGE_GEO, wireMat);
       mesh.scale.setScalar(r);
+      mesh.renderOrder = 1;
       group.add(mesh);
       joints.push(mesh);
     }
@@ -113,10 +184,12 @@ export function Hand3D({ letter }: { letter: string }) {
     const bones: THREE.LineSegments[] = [];
     for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
       const mesh = new THREE.LineSegments(BONE_EDGE_GEO, wireMat);
+      mesh.renderOrder = 1;
       group.add(mesh);
       bones.push(mesh);
     }
 
+    // Projector rings
     const rings: THREE.LineLoop[] = [];
     for (const r of [0.28, 0.40]) {
       const pts = Array.from({ length: 64 }, (_, i) => {
@@ -132,24 +205,28 @@ export function Hand3D({ letter }: { letter: string }) {
       rings.push(loop);
     }
 
+    // ── Post-processing ────────────────────────────────────────────────────
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.25, 0.22);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
+    // ── Initial pose ───────────────────────────────────────────────────────
     const initLms = getLandmarks(letter || "A");
-    updateMeshes(initLms, joints, bones);
+    updateMeshes(initLms, joints, bones, skinJoints, skinBones);
 
     stateRef.current = {
       renderer, composer, bloom, camera, group,
-      joints, bones, ringMat, rings,
+      joints, bones, skinJoints, skinBones,
+      ringMat, rings,
       currentLms: [...initLms],
       targetLms:  [...initLms],
       lerpStart:  performance.now(),
       lerpFrom:   [...initLms],
     };
 
+    // ── RAF loop ───────────────────────────────────────────────────────────
     const tick = (now: number) => {
       rafRef.current = requestAnimationFrame(tick);
       const s = stateRef.current!;
@@ -165,13 +242,14 @@ export function Hand3D({ letter }: { letter: string }) {
       if (t < 1) {
         const e = t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t;
         s.currentLms = lerp(s.lerpFrom, s.targetLms, e);
-        updateMeshes(s.currentLms, s.joints, s.bones);
+        updateMeshes(s.currentLms, s.joints, s.bones, s.skinJoints, s.skinBones);
       }
 
       composer.render();
     };
     rafRef.current = requestAnimationFrame(tick);
 
+    // ── Resize ─────────────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {
       const nw = el.clientWidth, nh = el.clientHeight;
       if (!nw || !nh) return;
