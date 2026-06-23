@@ -3,6 +3,16 @@ import { useAppStore, type Tab } from "../store/appStore";
 import { cn } from "../lib/utils";
 import { HandIcon, MessageIcon, TargetIcon, DatabaseIcon, BotIcon } from "./icons";
 
+function LogoutIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 const TABS: { id: Tab; label: string; Icon: React.FC<{ className?: string }> }[] = [
   { id: "sign2text", label: "Sign → Text", Icon: HandIcon },
   { id: "text2sign", label: "Text → Sign", Icon: MessageIcon },
@@ -12,7 +22,7 @@ const TABS: { id: Tab; label: string; Icon: React.FC<{ className?: string }> }[]
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { activeTab, setTab } = useAppStore();
+  const { activeTab, setTab, username, logout } = useAppStore();
 
   return (
     <div className="min-h-screen bg-navy-950 text-white flex flex-col font-sans">
@@ -30,7 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav tabs */}
-        <nav className="flex gap-1 ml-auto">
+        <nav className="flex gap-1 ml-auto items-center">
           {TABS.map(({ id, label, Icon }) => {
             const active = activeTab === id;
             return (
@@ -49,6 +59,17 @@ export function Layout({ children }: { children: ReactNode }) {
               </button>
             );
           })}
+          {/* User + logout */}
+          <div className="ml-3 pl-3 border-l border-navy-700/60 flex items-center gap-2 shrink-0">
+            <span className="text-xs text-slate-400 hidden sm:inline font-mono">{username}</span>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="w-8 h-8 flex items-center justify-center rounded-xl bg-navy-700 hover:bg-red-900/50 transition-colors cursor-pointer border border-navy-600"
+            >
+              <LogoutIcon className="w-4 h-4 text-slate-400 hover:text-red-400" />
+            </button>
+          </div>
         </nav>
       </header>
 

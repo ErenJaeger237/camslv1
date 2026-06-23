@@ -1,4 +1,5 @@
 import { useAppStore } from "./store/appStore";
+import { LoginPage } from "./components/LoginPage";
 import { Layout } from "./components/Layout";
 import { SignToText } from "./components/SignToText";
 import { TextToSign } from "./components/TextToSign";
@@ -7,7 +8,9 @@ import { DatasetPanel } from "./components/DatasetPanel";
 import { ChatPanel } from "./components/ChatPanel";
 
 export default function App() {
-  const activeTab = useAppStore((s) => s.activeTab);
+  const { token, activeTab } = useAppStore();
+
+  if (!token) return <LoginPage />;
 
   return (
     <Layout>

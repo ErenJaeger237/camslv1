@@ -3,6 +3,13 @@ import { create } from "zustand";
 export type Tab = "sign2text" | "text2sign" | "practice" | "dataset" | "chat";
 
 interface AppState {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  token: string | null;
+  username: string | null;
+  userId: string | null;
+  setAuth: (token: string, username: string, userId: string) => void;
+  logout: () => void;
+
   activeTab: Tab;
   setTab: (t: Tab) => void;
 
@@ -19,11 +26,11 @@ interface AppState {
   textToSignInput: string;
   setTextToSignInput: (t: string) => void;
 
-  // Practice
+  // Practice — sessionId is the user's userId once logged in (persistent progress)
   sessionId: string;
   practiceTarget: string;
   practiceMastery: number;
-  practiceHistory: {letter: string; correct: boolean}[];
+  practiceHistory: { letter: string; correct: boolean }[];
   setPracticeState: (target: string, mastery: number) => void;
   addPracticeResult: (letter: string, correct: boolean) => void;
 
@@ -32,7 +39,16 @@ interface AppState {
   addChatMessage: (role: "user" | "assistant", text: string) => void;
 }
 
-function makeSessionId(): string {
+function loadAuth() {
+  return {
+    token: localStorage.getItem("camsl_token"),
+    username: localStorage.getItem("camsl_username"),
+    userId: localStorage.getItem("camsl_user_id"),
+  };
+}
+
+function getSessionId(userId: string | null): string {
+  if (userId) return userId;
   const stored = localStorage.getItem("camsl_session_id");
   if (stored) return stored;
   const id = crypto.randomUUID();
@@ -40,7 +56,26 @@ function makeSessionId(): string {
   return id;
 }
 
+const stored = loadAuth();
+
 export const useAppStore = create<AppState>((set) => ({
+  // Auth
+  token: stored.token,
+  username: stored.username,
+  userId: stored.userId,
+  setAuth: (token, username, userId) => {
+    localStorage.setItem("camsl_token", token);
+    localStorage.setItem("camsl_username", username);
+    localStorage.setItem("camsl_user_id", userId);
+    set({ token, username, userId, sessionId: userId });
+  },
+  logout: () => {
+    localStorage.removeItem("camsl_token");
+    localStorage.removeItem("camsl_username");
+    localStorage.removeItem("camsl_user_id");
+    set({ token: null, username: null, userId: null });
+  },
+
   activeTab: "sign2text",
   setTab: (t) => set({ activeTab: t }),
 
@@ -56,7 +91,7 @@ export const useAppStore = create<AppState>((set) => ({
   textToSignInput: "",
   setTextToSignInput: (textToSignInput) => set({ textToSignInput }),
 
-  sessionId: makeSessionId(),
+  sessionId: getSessionId(stored.userId),
   practiceTarget: "",
   practiceMastery: 0,
   practiceHistory: [],

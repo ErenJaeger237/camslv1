@@ -12,7 +12,8 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import chat, practice, autocomplete, contributions
+from .routes import auth, chat, practice, autocomplete, contributions
+from . import db_users
 
 app = FastAPI(title="CamSL API", version="2.0.0")
 
@@ -25,6 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+db_users.init()
+
+app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(practice.router, prefix="/api")
 app.include_router(autocomplete.router, prefix="/api")
