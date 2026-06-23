@@ -16,6 +16,11 @@ pywebview>=4.4
 # Text-to-speech
 pyttsx3>=2.90
 
+# Backend API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-dotenv>=1.0.0
+
 # Utilities
 Pillow>=10.2.0
 kagglehub>=0.2.0

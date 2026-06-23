@@ -9,7 +9,15 @@ Start:  uvicorn backend.main:app --reload --port 8000
 """
 
 import os
+from pathlib import Path
 from fastapi import FastAPI
+
+# Load .env from project root if present (keeps secrets out of shell history)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except ImportError:
+    pass
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routes import auth, chat, practice, autocomplete, contributions, retrain

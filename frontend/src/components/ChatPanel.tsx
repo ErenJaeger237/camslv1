@@ -22,7 +22,7 @@ export function ChatPanel() {
       const r = await sendChat(msg, history);
       addChatMessage("assistant", r.reply);
     } catch {
-      addChatMessage("assistant", "Sorry, I couldn't reach the server. Check your GEMINI_API_KEY.");
+      addChatMessage("assistant", "⚠️ AI chat is unavailable right now. Make sure the backend is running with a valid GEMINI_API_KEY environment variable set.");
     } finally {
       setLoading(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
