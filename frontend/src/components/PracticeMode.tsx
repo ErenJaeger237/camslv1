@@ -7,6 +7,7 @@ import { initPractice, recordPracticeResult } from "../lib/api";
 import { useAppStore } from "../store/appStore";
 import { cn } from "../lib/utils";
 import { ChevronRightIcon } from "./icons";
+import { Hand3D } from "./Hand3D";
 
 const HOLD_FRAMES = 20;
 
@@ -174,16 +175,15 @@ export function PracticeMode() {
           Skip <ChevronRightIcon className="w-4 h-4" />
         </button>
 
-        {/* Sign hint */}
+        {/* 3D hand reference */}
         {practiceTarget && (
-          <div className="bg-navy-800 rounded-2xl p-3 border border-navy-700/60 flex flex-col items-center shadow">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 font-semibold">Reference</p>
-            <img
-              src={`/signs/${practiceTarget}.png`}
-              alt={practiceTarget}
-              className="w-28 h-28 object-contain"
-              onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
-            />
+          <div className="bg-navy-900 rounded-2xl border border-navy-700/60 flex flex-col shadow overflow-hidden flex-1 min-h-0">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold px-3 pt-3 pb-1 shrink-0">
+              3D Reference — rotate auto
+            </p>
+            <div className="flex-1 min-h-0">
+              <Hand3D letter={practiceTarget} />
+            </div>
           </div>
         )}
       </div>
