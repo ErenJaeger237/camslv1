@@ -76,18 +76,20 @@ const SKIN_FRAG = /* glsl */`
   varying vec3 vWorldPos;
 
   void main() {
-    // Lower Fresnel power (1.8) → glow extends further from edges into centre
     float cosA   = max(dot(vNormal, vViewDir), 0.0);
-    float fresnel = pow(1.0 - cosA, 1.8);
+    float fresnel = pow(1.0 - cosA, 2.2);
 
-    // Additive scanlines only — never subtract from alpha
-    float scan = (sin(vWorldPos.y * 15.0 - uTime * 1.8) * 0.5 + 0.5) * 0.18;
+    // Scanlines — subtle horizontal bands scrolling up
+    float scan = (sin(vWorldPos.y * 15.0 - uTime * 1.8) * 0.5 + 0.5) * 0.25;
 
-    // 0.12 base ensures even centre-facing surfaces have ambient glow
-    float alpha  = clamp(fresnel * 0.52 + scan + 0.12, 0.0, 0.85);
-    float bright = fresnel * 1.3 + scan + 0.22;
+    // NormalBlending: alpha controls how opaque the surface is.
+    // Edges (high Fresnel) → opaque; centre → nearly transparent.
+    float alpha = clamp(fresnel * 0.75 + scan * 0.15 + 0.07, 0.0, 0.88);
 
-    gl_FragColor = vec4(uColor * bright, alpha);
+    // Surface colour: brighter at edges, dim cyan ambient in the centre
+    vec3 color  = uColor * (fresnel * 0.9 + scan * 0.3 + 0.25);
+
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
@@ -179,6 +181,8 @@ export function Hand3D({ letter }: { letter: string }) {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
 
+    // NormalBlending (default) — renders an actual semi-transparent surface.
+    // AdditiveBlending only adds brightness; it never creates a visible body.
     const skinMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime:  { value: 0 },
@@ -187,9 +191,9 @@ export function Hand3D({ letter }: { letter: string }) {
       vertexShader:   SKIN_VERT,
       fragmentShader: SKIN_FRAG,
       transparent: true,
-      blending:    THREE.AdditiveBlending,
-      depthWrite:  false,
-      depthTest:   false,   // never occluded — all skin layers accumulate
+      blending:    THREE.NormalBlending,
+      depthWrite:  false,   // don't occlude the wireframe lines above
+      depthTest:   true,
       side:        THREE.DoubleSide,
     });
 
