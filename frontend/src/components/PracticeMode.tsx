@@ -139,47 +139,50 @@ export function PracticeMode() {
       </div>
 
       {/* Controls */}
-      <div className="w-64 flex flex-col gap-3 shrink-0">
-        {/* Target letter */}
-        <div className="bg-navy-800 rounded-2xl p-5 border border-navy-700/60 shadow-lg flex flex-col items-center">
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 font-semibold">Sign this letter</p>
-          <span
-            className="text-9xl font-bold text-white leading-none"
-            style={{ fontFamily: "'Fira Code', monospace" }}
-          >
-            {practiceTarget || "…"}
-          </span>
-          <p className="text-xs text-slate-500 mt-3">Hold still for ~{(HOLD_FRAMES / 30).toFixed(1)}s</p>
+      <div className="w-64 flex flex-col gap-2 shrink-0">
+
+        {/* Compact header: letter + mastery + skip in one strip */}
+        <div className="bg-navy-800 rounded-2xl px-4 py-3 border border-navy-700/60 shadow-lg shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Big letter badge */}
+            <span
+              className="text-6xl font-bold text-white leading-none w-14 text-center"
+              style={{ fontFamily: "'Fira Code', monospace" }}
+            >
+              {practiceTarget || "…"}
+            </span>
+
+            {/* Mastery + skip */}
+            <div className="flex-1 flex flex-col gap-2">
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Mastery</span>
+                <span className="text-teal-400 font-bold">{practiceMastery}%</span>
+              </div>
+              <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                  style={{ width: `${practiceMastery}%` }}
+                />
+              </div>
+              <button
+                onClick={() => handleResult(false)}
+                disabled={!practiceTarget || !!feedback}
+                className="flex items-center justify-center gap-1 py-1 rounded-lg bg-navy-700 hover:bg-navy-600 text-xs transition-colors cursor-pointer disabled:opacity-40 border border-navy-600"
+              >
+                Skip <ChevronRightIcon className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-2 text-center">
+            Hold still for ~{(HOLD_FRAMES / 30).toFixed(1)}s
+          </p>
         </div>
 
-        {/* Mastery */}
-        <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow">
-          <div className="flex justify-between text-xs mb-2">
-            <span className="text-slate-400">Mastery</span>
-            <span className="text-teal-400 font-bold">{practiceMastery}%</span>
-          </div>
-          <div className="h-2 bg-navy-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-teal-500 rounded-full transition-all duration-500"
-              style={{ width: `${practiceMastery}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Skip */}
-        <button
-          onClick={() => handleResult(false)}
-          disabled={!practiceTarget || !!feedback}
-          className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-navy-700 hover:bg-navy-600 text-sm transition-colors cursor-pointer disabled:opacity-40 border border-navy-600"
-        >
-          Skip <ChevronRightIcon className="w-4 h-4" />
-        </button>
-
-        {/* 3D hand reference */}
+        {/* 3D hand reference — takes all remaining height */}
         {practiceTarget && (
           <div className="bg-navy-900 rounded-2xl border border-navy-700/60 flex flex-col shadow overflow-hidden flex-1 min-h-0">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold px-3 pt-3 pb-1 shrink-0">
-              3D Reference — rotate auto
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold px-3 pt-2 pb-0 shrink-0">
+              3D Reference
             </p>
             <div className="flex-1 min-h-0">
               <Hand3D letter={practiceTarget} />
