@@ -1,9 +1,9 @@
 import csv
-import os
 import time
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from . import retrain as _retrain_mod
 
 router = APIRouter()
 
@@ -36,6 +36,9 @@ def add_contribution(item: Contribution):
             "label": label,
             "features": ",".join(f"{v:.6f}" for v in item.features),
         })
+    # Count total to check auto-retrain threshold
+    total = sum(1 for _ in open(CONTRIB_CSV)) - 1  # subtract header
+    _retrain_mod.maybe_auto_retrain(total)
     return {"ok": True}
 
 

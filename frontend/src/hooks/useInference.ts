@@ -61,8 +61,8 @@ function buildArch(): tf.Sequential {
   return m;
 }
 
-async function applyWeights(model: tf.Sequential): Promise<void> {
-  const resp = await fetch(WEIGHTS_BIN);
+async function applyWeights(model: tf.Sequential, cacheBust = ""): Promise<void> {
+  const resp = await fetch(WEIGHTS_BIN + cacheBust);
   if (!resp.ok) throw new Error(`Cannot load weights: ${resp.status} ${WEIGHTS_BIN}`);
   const buf = await resp.arrayBuffer();
   const flat = new Float32Array(buf);
@@ -95,43 +95,53 @@ async function applyWeights(model: tf.Sequential): Promise<void> {
   }
 }
 
+async function loadModel(version: number): Promise<tf.Sequential> {
+  const model = buildArch();
+  const dummy = tf.zeros([1, 63]);
+  (model.predict(dummy) as tf.Tensor).dispose();
+  dummy.dispose();
+  // Cache-bust with version so the browser fetches fresh weights after retrain
+  await applyWeights(model, version > 0 ? `?v=${version}` : "");
+  const warm = tf.zeros([1, 63]);
+  (model.predict(warm) as tf.Tensor).dispose();
+  warm.dispose();
+  return model;
+}
+
 export function useInference() {
   const modelRef = useRef<tf.Sequential | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const model = buildArch();
-
-        // Build (materialise weights) with a dummy pass before setting real weights
-        const dummy = tf.zeros([1, 63]);
-        (model.predict(dummy) as tf.Tensor).dispose();
-        dummy.dispose();
-
-        await applyWeights(model);
-
-        // Warm-up with real weights
-        const warm = tf.zeros([1, 63]);
-        (model.predict(warm) as tf.Tensor).dispose();
-        warm.dispose();
-
-        if (!cancelled) {
-          modelRef.current = model;
-          setReady(true);
-          console.log("[Inference] Alphabet model loaded and ready.");
-        }
-      } catch (e) {
-        if (!cancelled) {
-          console.error("[Inference] Load failed:", e);
-          setError(String(e));
-        }
-      }
-    })();
-    return () => { cancelled = true; };
+  const doLoad = useCallback(async (version = 0) => {
+    try {
+      setReady(false);
+      const model = await loadModel(version);
+      modelRef.current?.dispose?.();
+      modelRef.current = model;
+      setReady(true);
+      setError(null);
+      console.log(`[Inference] Model ready (v${version}).`);
+    } catch (e) {
+      console.error("[Inference] Load failed:", e);
+      setError(String(e));
+    }
   }, []);
+
+  useEffect(() => {
+    doLoad(0);
+  }, [doLoad]);
+
+  // Listen for hot-reload events dispatched by DatasetPanel after retrain
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const version = (e as CustomEvent<{ version: number }>).detail.version;
+      console.log(`[Inference] Reloading model after retrain v${version}…`);
+      doLoad(version);
+    };
+    window.addEventListener("camsl:model-updated", handler);
+    return () => window.removeEventListener("camsl:model-updated", handler);
+  }, [doLoad]);
 
   const predict = useCallback((features: Float32Array): Prediction => {
     if (!modelRef.current || !ready) return null;

@@ -60,3 +60,10 @@ export const getContributionCounts = () =>
 
 export const deleteLastContribution = () =>
   del<{ ok: boolean; remaining: number }>("/api/contributions/last");
+
+// ── Retrain ───────────────────────────────────────────────────────────────────
+export const triggerRetrain = () =>
+  post<{ ok: boolean; message: string }>("/api/retrain/trigger", {});
+
+export const getRetrainStatus = () =>
+  get<{ state: string; message: string; version: number }>("/api/retrain/status");
