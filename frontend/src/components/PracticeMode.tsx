@@ -67,12 +67,16 @@ export function PracticeMode() {
     // Draw skeleton
     const canvas = canvasRef.current;
     if (canvas) {
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (canvas.width !== cw) canvas.width = cw;
+      if (canvas.height !== ch) canvas.height = ch;
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        if (landmarks) drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
-        else clearCanvas(ctx, canvas.width, canvas.height);
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        if (landmarks) drawSkeleton(ctx, landmarks, cw, ch, vw, vh);
+        else clearCanvas(ctx, cw, ch);
       }
     }
 

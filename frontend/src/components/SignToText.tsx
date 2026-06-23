@@ -77,14 +77,18 @@ export function SignToText() {
     // Draw skeleton on canvas overlay
     const canvas = canvasRef.current;
     if (canvas) {
-      const vw = video.videoWidth || 640;
-      const vh = video.videoHeight || 480;
-      if (canvas.width !== vw) canvas.width = vw;
-      if (canvas.height !== vh) canvas.height = vh;
+      // Size the canvas to the container (CSS display size), not video native res.
+      // drawSkeleton computes the object-cover crop internally using videoWidth/videoHeight.
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (canvas.width !== cw) canvas.width = cw;
+      if (canvas.height !== ch) canvas.height = ch;
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        if (landmarks) drawSkeleton(ctx, landmarks, vw, vh);
-        else clearCanvas(ctx, vw, vh);
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        if (landmarks) drawSkeleton(ctx, landmarks, cw, ch, vw, vh);
+        else clearCanvas(ctx, cw, ch);
       }
     }
 
