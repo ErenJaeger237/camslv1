@@ -12,11 +12,11 @@ const TIP_R   = 0.038;
 const BONE_R  = 0.018;
 
 // ── Skin tubes (solid geometry, significantly fatter than the cage) ────────────
-// 3-4× the wireframe radius so the translucent surface is clearly visible
-// around and between the inner skeleton lines.
-const SKIN_JOINT_R = 0.072;
-const SKIN_TIP_R   = 0.085;
-const SKIN_BONE_R  = 0.062;
+// Wide enough that adjacent tubes along each finger overlap and merge into
+// a continuous finger shape rather than separated sausage links.
+const SKIN_JOINT_R = 0.105;
+const SKIN_TIP_R   = 0.115;
+const SKIN_BONE_R  = 0.098;
 
 const CYAN    = 0x00f3ff;
 const BG      = 0x020b18;
@@ -123,7 +123,7 @@ export function Hand3D({ letter }: { letter: string }) {
     const skinMat = new THREE.MeshBasicMaterial({
       color:       CYAN,
       transparent: true,
-      opacity:     0.18,
+      opacity:     0.38,
       side:        THREE.DoubleSide,
       depthWrite:  false,
       depthTest:   false,
