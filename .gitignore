@@ -52,6 +52,9 @@ backend/data/
 frontend/public/models/alphabet/
 frontend/public/models/signs/
 
+# MediaPipe WASM (copied from node_modules by npm postinstall)
+frontend/public/mediapipe/
+
 # IDE / OS
 .vscode/
 .idea/

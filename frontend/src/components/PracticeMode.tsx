@@ -116,9 +116,11 @@ export function PracticeMode() {
         )}
 
         {!mpReady && !camError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-navy-900/80 gap-3">
-            <div className="w-10 h-10 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-slate-300">{loadingMsg}</p>
+          <div className="absolute top-3 left-3">
+            <span className="bg-yellow-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-yellow-300 border border-yellow-700/40 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              {loadingMsg}
+            </span>
           </div>
         )}
 

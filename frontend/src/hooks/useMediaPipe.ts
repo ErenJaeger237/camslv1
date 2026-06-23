@@ -1,6 +1,9 @@
 /**
- * useMediaPipe.ts — HandLandmarker in the browser via WASM.
- * Tries GPU delegate first, falls back to CPU automatically.
+ * useMediaPipe.ts — HandLandmarker running in the browser.
+ *
+ * WASM served locally from /mediapipe/wasm/ (no CDN dependency).
+ * Model downloaded from Google's CDN once, then browser-cached.
+ * Tries GPU delegate first, silently falls back to CPU.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,8 +14,10 @@ import {
 } from "@mediapipe/tasks-vision";
 import type { RawLandmark } from "../lib/landmarks";
 
-const WASM_CDN =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+// Served from public/mediapipe/wasm/ — no network needed after npm install
+const WASM_LOCAL = "/mediapipe/wasm";
+
+// Model from Google CDN — ~8 MB, cached by browser after first download
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
@@ -25,7 +30,7 @@ export function useMediaPipe() {
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadingMsg, setLoadingMsg] = useState("Downloading MediaPipe model…");
+  const [loadingMsg, setLoadingMsg] = useState("Initialising hand detection…");
 
   useEffect(() => {
     let cancelled = false;
@@ -33,11 +38,10 @@ export function useMediaPipe() {
     (async () => {
       try {
         setLoadingMsg("Loading WASM runtime…");
-        const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
+        const vision = await FilesetResolver.forVisionTasks(WASM_LOCAL);
 
-        setLoadingMsg("Loading hand detection model…");
+        setLoadingMsg("Downloading hand model (~8 MB, cached after first load)…");
 
-        // Try GPU first; fall back to CPU silently
         let hl: HandLandmarker;
         try {
           hl = await HandLandmarker.createFromOptions(vision, {
@@ -46,6 +50,7 @@ export function useMediaPipe() {
             numHands: 1,
           });
         } catch {
+          // GPU unavailable — fall back to CPU silently
           hl = await HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
             runningMode: "VIDEO",
@@ -57,7 +62,10 @@ export function useMediaPipe() {
         landmarkerRef.current = hl;
         setReady(true);
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) {
+          console.error("[MediaPipe] init failed:", e);
+          setError(String(e));
+        }
       }
     })();
 
