@@ -145,9 +145,9 @@ export function Hand3D({ letter }: { letter: string }) {
     const scene = new THREE.Scene();
     scene.background = null;
 
-    const camera = new THREE.PerspectiveCamera(38, w / h, 0.01, 20);
-    camera.position.set(0.28, 0.62, 1.4);
-    camera.lookAt(0, 0.28, 0);
+    const camera = new THREE.PerspectiveCamera(48, w / h, 0.01, 20);
+    camera.position.set(0.18, 0.45, 0.82);
+    camera.lookAt(0, 0.18, 0);
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -160,7 +160,7 @@ export function Hand3D({ letter }: { letter: string }) {
 
     // Hand group (we rotate this)
     const group = new THREE.Group();
-    group.position.set(0, -0.25, 0);
+    group.position.set(0, -0.12, 0);
     scene.add(group);
 
     const gradMap = makeGradMap();
