@@ -1,115 +1,109 @@
 /**
  * Hand3D.tsx — holographic 3D hand model.
  *
- * Visual pipeline:
- *   1. ShaderMaterial (Fresnel edge-glow + scrolling scanlines) on joints
- *   2. LineBasicMaterial (AdditiveBlending) on bone connections
- *   3. EffectComposer → UnrealBloomPass → OutputPass
+ * Architecture (the correct hologram pipeline):
  *
- * Background is solid dark navy — bloom requires a dark opaque surface
- * to bleed light into; a transparent canvas produces no visible glow.
+ *   EdgesGeometry(CylinderGeometry) per bone  ← gives each bone a 3D tube
+ *   EdgesGeometry(SphereGeometry)   per joint ← gives each joint a 3D sphere
+ *   LineSegments + LineBasicMaterial(AdditiveBlending) on all of the above
+ *   → EffectComposer → UnrealBloomPass → OutputPass
+ *
+ * Why EdgesGeometry instead of Line segments between joints:
+ *   A raw line from point A to point B looks like a stick.
+ *   EdgesGeometry(CylinderGeometry) renders the structural EDGES of a 3D tube —
+ *   vertical stripes + circular cross-section rings — so as the hand rotates the
+ *   lines converge/diverge in perspective exactly like a solid 3D object would,
+ *   creating real depth cues.  That is what makes it read as a hologram and not
+ *   a 2D plot.
+ *
+ * Why bloom threshold matters:
+ *   The lines are 1 px wide on-screen.  The UnrealBloomPass isolates every pixel
+ *   above the threshold and bleeds light outward in a gaussian cascade AFTER the
+ *   scene is rendered.  The source lines stay perfectly crisp; the glow is
+ *   additive around them.  This is the opposite of a blur filter applied to
+ *   the coordinates directly.
  */
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { EffectComposer }  from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass }      from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { OutputPass }      from "three/examples/jsm/postprocessing/OutputPass.js";
 import { getLandmarks, HAND_CONNECTIONS } from "../lib/handPoses";
 
-// ── Visual constants ───────────────────────────────────────────────────────────
-const HOLO_COLOR = new THREE.Color(0x00f3ff);   // neon cyan
-const BG_COLOR   = 0x020b18;                    // deep dark navy
-const JOINT_R    = 0.024;
-const TIP_R      = 0.032;
-const TIP_IDS    = new Set([4, 8, 12, 16, 20]);
-const LERP_MS    = 450;
+// ── Scene constants ────────────────────────────────────────────────────────────
+const CYAN      = 0x00f3ff;
+const BG        = 0x020b18;   // dark navy — bloom needs an opaque dark bg
+const JOINT_R   = 0.030;      // sphere radius for knuckle joints
+const TIP_R     = 0.038;      // fingertip joints slightly larger
+const BONE_R    = 0.018;      // cylinder radius for each bone
+const TIP_IDS   = new Set([4, 8, 12, 16, 20]);
+const LERP_MS   = 450;
 
-// ── GLSL: Fresnel edge-glow + scanlines ───────────────────────────────────────
-const VERT = /* glsl */`
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying vec3 vWorldPos;
+// Reusable vectors — avoid allocations inside the hot RAF loop
+const _pa  = new THREE.Vector3();
+const _pb  = new THREE.Vector3();
+const _mid = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _up  = new THREE.Vector3(0, 1, 0);
 
-  void main() {
-    vec4 mvPos  = modelViewMatrix * vec4(position, 1.0);
-    vNormal     = normalize(normalMatrix * normal);
-    vViewDir    = normalize(-mvPos.xyz);
-    vWorldPos   = (modelMatrix * vec4(position, 1.0)).xyz;
-    gl_Position = projectionMatrix * mvPos;
-  }
-`;
+// Pre-built edge geometries shared across all joints/bones of the same size
+const JOINT_EDGE_GEO = new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 10, 7));
+const TIP_EDGE_GEO   = new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 10, 7));
+const BONE_EDGE_GEO  = new THREE.EdgesGeometry(
+  new THREE.CylinderGeometry(1, 1, 1, 8),
+);
 
-const FRAG = /* glsl */`
-  uniform float uTime;
-  uniform vec3  uColor;
-
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying vec3 vWorldPos;
-
-  void main() {
-    // Fresnel — edges bright, centre transparent
-    float fresnel = pow(1.0 - max(dot(vNormal, vViewDir), 0.0), 2.5);
-
-    // Scrolling horizontal scanlines (world-space Y so they stay put as hand rotates)
-    float scan = sin(vWorldPos.y * 22.0 - uTime * 2.8) * 0.5 + 0.5;
-    scan = scan * scan * scan;                  // sharpen the bands
-
-    float brightness = fresnel + scan * 0.35 + 0.06;
-    float alpha      = clamp(fresnel * 0.9 + scan * 0.25 + 0.06, 0.0, 1.0);
-
-    gl_FragColor = vec4(uColor * brightness, alpha);
-  }
-`;
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function lerp(a: number[], b: number[], t: number): number[] {
   return a.map((v, i) => v + (b[i] - v) * t);
 }
 
 function updateMeshes(
   lms: number[],
-  joints: THREE.Mesh[],
-  boneGeos: THREE.BufferGeometry[],
+  joints: THREE.LineSegments[],
+  bones:  THREE.LineSegments[],
 ): void {
-  // Move joint spheres
+  // Move each joint sphere to its landmark position
   for (let i = 0; i < 21; i++) {
     joints[i].position.set(lms[i * 3], lms[i * 3 + 1], lms[i * 3 + 2]);
   }
-  // Update bone line endpoints directly in the buffer
+
+  // Orient each bone cylinder between its two landmark endpoints
   for (let bi = 0; bi < HAND_CONNECTIONS.length; bi++) {
     const [a, b] = HAND_CONNECTIONS[bi];
-    const arr = boneGeos[bi].attributes.position.array as Float32Array;
-    arr[0] = lms[a * 3];     arr[1] = lms[a * 3 + 1]; arr[2] = lms[a * 3 + 2];
-    arr[3] = lms[b * 3];     arr[4] = lms[b * 3 + 1]; arr[5] = lms[b * 3 + 2];
-    boneGeos[bi].attributes.position.needsUpdate = true;
+    _pa.set(lms[a*3], lms[a*3+1], lms[a*3+2]);
+    _pb.set(lms[b*3], lms[b*3+1], lms[b*3+2]);
+    _dir.subVectors(_pb, _pa).normalize();
+    _mid.addVectors(_pa, _pb).multiplyScalar(0.5);
+
+    const len = _pa.distanceTo(_pb);
+    bones[bi].position.copy(_mid);
+    // Cylinder base is unit-length; scale y to actual bone length, x/z to bone radius
+    bones[bi].scale.set(BONE_R, len, BONE_R);
+    bones[bi].quaternion.setFromUnitVectors(_up, _dir);
   }
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
 export function Hand3D({ letter }: { letter: string }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rafRef   = useRef<number>(0);
+
   const stateRef = useRef<{
     renderer: THREE.WebGLRenderer;
     composer: EffectComposer;
-    group: THREE.Group;
-    joints: THREE.Mesh[];
-    boneGeos: THREE.BufferGeometry[];
-    holoMat: THREE.ShaderMaterial;
-    ringMat: THREE.MeshBasicMaterial;
-    ring: THREE.Mesh;
-    camera: THREE.PerspectiveCamera;
-    bloom: UnrealBloomPass;
+    camera:   THREE.PerspectiveCamera;
+    group:    THREE.Group;
+    joints:   THREE.LineSegments[];
+    bones:    THREE.LineSegments[];
+    rings:    THREE.LineLoop[];
     currentLms: number[];
-    targetLms: number[];
-    lerpStart: number;
-    lerpFrom: number[];
+    targetLms:  number[];
+    lerpStart:  number;
+    lerpFrom:   number[];
   } | null>(null);
 
-  // ── Init scene ───────────────────────────────────────────────────────────────
+  // ── Build scene once ───────────────────────────────────────────────────────
   useEffect(() => {
     const el = mountRef.current;
     if (!el) return;
@@ -117,133 +111,143 @@ export function Hand3D({ letter }: { letter: string }) {
     const w = el.clientWidth  || 300;
     const h = el.clientHeight || 300;
 
-    // Renderer
+    // Renderer — opaque dark bg required for bloom to bleed correctly
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
-    renderer.setClearColor(BG_COLOR, 1);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.setClearColor(BG, 1);
+    renderer.toneMapping         = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     el.appendChild(renderer.domElement);
 
-    // Scene + camera
     const scene  = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(48, w / h, 0.01, 30);
     camera.position.set(0.4, 1.2, 2.8);
     camera.lookAt(0, 0.9, 0);
 
-    // ── Materials ────────────────────────────────────────────────────────────
-    const holoMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime:  { value: 0 },
-        uColor: { value: HOLO_COLOR.clone() },
-      },
-      vertexShader:   VERT,
-      fragmentShader: FRAG,
+    // Single shared wire material — AdditiveBlending means overlapping
+    // edges add their brightness together, naturally brightening dense areas.
+    const wireMat = new THREE.LineBasicMaterial({
+      color:      CYAN,
       transparent: true,
-      blending:    THREE.AdditiveBlending,
-      depthWrite:  false,
-      side:        THREE.DoubleSide,
-    });
-
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x00f3ff,
-      transparent: true,
-      opacity: 0.65,
+      opacity:    0.90,
       blending:   THREE.AdditiveBlending,
       depthWrite: false,
     });
 
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x00f3ff,
-      transparent: true,
-      opacity: 0.22,
-      side:       THREE.DoubleSide,
-      blending:   THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-
-    // ── Hand group ────────────────────────────────────────────────────────────
+    // Hand group
     const group = new THREE.Group();
     group.position.set(0, -0.3, 0);
     scene.add(group);
 
-    // Joints (spheres with Fresnel shader)
-    const joints: THREE.Mesh[] = [];
+    // ── Joints — EdgesGeometry(Sphere) ─────────────────────────────────────
+    // Each joint is a unit-sphere edge mesh scaled to JOINT_R or TIP_R.
+    // When the hand rotates, the latitude/longitude edge lines converge in
+    // perspective exactly as a real sphere would — this is the 3D depth cue.
+    const joints: THREE.LineSegments[] = [];
     for (let i = 0; i < 21; i++) {
       const r    = TIP_IDS.has(i) ? TIP_R : JOINT_R;
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), holoMat);
+      const mesh = new THREE.LineSegments(
+        TIP_IDS.has(i) ? TIP_EDGE_GEO : JOINT_EDGE_GEO,
+        wireMat,
+      );
+      mesh.scale.setScalar(r);
       group.add(mesh);
       joints.push(mesh);
     }
 
-    // Bones (line segments — no cylinders needed, bloom makes them glow)
-    const boneGeos: THREE.BufferGeometry[] = [];
+    // ── Bones — EdgesGeometry(Cylinder) ────────────────────────────────────
+    // Each bone is a unit cylinder edge mesh.  scale.set(BONE_R, length, BONE_R)
+    // stretches it to the correct size; quaternion aligns it between two joints.
+    // The 8 vertical stripes of the cylinder + 2 ring caps give each bone real
+    // 3D volume that perspectively foreshortens as the hand rotates.
+    const bones: THREE.LineSegments[] = [];
     for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-      group.add(new THREE.Line(geo, lineMat));
-      boneGeos.push(geo);
+      const mesh = new THREE.LineSegments(BONE_EDGE_GEO, wireMat);
+      group.add(mesh);
+      bones.push(mesh);
     }
 
-    // Atmospheric projector ring at wrist level
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.22, 0.30, 64),
-      ringMat,
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.02;
-    group.add(ring);
+    // ── Projector rings at wrist level ─────────────────────────────────────
+    // Two concentric LineLoop circles suggest the hologram projector base.
+    const ringMat = new THREE.LineBasicMaterial({
+      color:      CYAN,
+      transparent: true,
+      opacity:    0.30,
+      blending:   THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const rings: THREE.LineLoop[] = [];
+    for (const r of [0.28, 0.40]) {
+      const loop = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(
+          Array.from({ length: 64 }, (_, i) => {
+            const a = (i / 64) * Math.PI * 2;
+            return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+          }),
+        ),
+        ringMat,
+      );
+      loop.position.y = 0.04;
+      group.add(loop);
+      rings.push(loop);
+    }
 
-    // ── Post-processing ───────────────────────────────────────────────────────
+    // ── Post-processing ─────────────────────────────────────────────────────
+    // RenderPass renders the scene normally into an off-screen buffer.
+    // UnrealBloomPass isolates bright pixels and spreads them with a
+    // multi-pass gaussian — the source lines remain crisp; the glow bleeds.
+    // OutputPass converts the HDR buffer to sRGB for display.
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 1.5, 0.4, 0.10);
+    const bloom = new UnrealBloomPass(
+      new THREE.Vector2(w, h),
+      1.6,   // strength  — how intense the glow is
+      0.45,  // radius    — how far the glow spreads
+      0.12,  // threshold — only pixels brighter than this bloom
+    );
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
-    // ── Initial pose ──────────────────────────────────────────────────────────
+    // ── Initial pose ────────────────────────────────────────────────────────
     const initLms = getLandmarks(letter || "A");
-    updateMeshes(initLms, joints, boneGeos);
+    updateMeshes(initLms, joints, bones);
 
     stateRef.current = {
-      renderer, composer, group, joints, boneGeos,
-      holoMat, ringMat, ring, camera, bloom,
+      renderer, composer, camera, group, joints, bones, rings,
       currentLms: [...initLms],
       targetLms:  [...initLms],
       lerpStart:  performance.now(),
       lerpFrom:   [...initLms],
     };
 
-    // ── RAF loop ──────────────────────────────────────────────────────────────
+    // ── RAF loop ────────────────────────────────────────────────────────────
     const tick = (now: number) => {
       rafRef.current = requestAnimationFrame(tick);
       const s = stateRef.current!;
 
-      // Slow pendulum rotation (±30°)
+      // Slow pendulum rotation ±30°
       group.rotation.y = Math.sin(now * 0.00060 * Math.PI * 2 * 0.3) * 0.52;
 
-      // Pulsing projector ring
-      const pulse = 1 + Math.sin(now * 0.0015) * 0.09;
-      s.ring.scale.set(pulse, 1, pulse);
-      s.ringMat.opacity = 0.15 + Math.sin(now * 0.0020) * 0.10;
-
-      // Advance scanline time
-      s.holoMat.uniforms.uTime.value = now * 0.001;
+      // Pulse the projector rings
+      const pulse = 1 + Math.sin(now * 0.0018) * 0.07;
+      rings[0].scale.set(pulse, 1, pulse);
+      rings[1].scale.set(1 / pulse, 1, 1 / pulse);  // inner/outer breathe opposite
+      ringMat.opacity = 0.18 + Math.sin(now * 0.0022) * 0.12;
 
       // Smooth pose lerp
       const t = Math.min((now - s.lerpStart) / LERP_MS, 1);
       if (t < 1) {
-        const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        const e = t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t;
         s.currentLms = lerp(s.lerpFrom, s.targetLms, e);
-        updateMeshes(s.currentLms, s.joints, s.boneGeos);
+        updateMeshes(s.currentLms, s.joints, s.bones);
       }
 
       composer.render();
     };
     rafRef.current = requestAnimationFrame(tick);
 
-    // ── Resize ────────────────────────────────────────────────────────────────
+    // ── Resize ──────────────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {
       const nw = el.clientWidth, nh = el.clientHeight;
       if (!nw || !nh) return;
@@ -265,7 +269,7 @@ export function Hand3D({ letter }: { letter: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Letter change → update target pose ────────────────────────────────────
+  // ── Letter change → animate to new pose ───────────────────────────────────
   useEffect(() => {
     const s = stateRef.current;
     if (!s) return;
