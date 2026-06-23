@@ -77,14 +77,14 @@ export function SignToText() {
     // Draw skeleton on canvas overlay
     const canvas = canvasRef.current;
     if (canvas) {
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      if (canvas.width !== vw) canvas.width = vw;
+      if (canvas.height !== vh) canvas.height = vh;
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
-        }
-        if (landmarks) drawSkeleton(ctx, landmarks, canvas.width, canvas.height);
-        else clearCanvas(ctx, canvas.width, canvas.height);
+        if (landmarks) drawSkeleton(ctx, landmarks, vw, vh);
+        else clearCanvas(ctx, vw, vh);
       }
     }
 
@@ -177,7 +177,7 @@ export function SignToText() {
               {/* Skeleton overlay */}
               <canvas
                 ref={canvasRef}
-                className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none"
+                className="absolute inset-0 w-full h-full pointer-events-none"
               />
 
               {/* ── Top-left status chips ── */}

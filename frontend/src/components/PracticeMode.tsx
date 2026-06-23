@@ -94,7 +94,7 @@ export function PracticeMode() {
       {/* Webcam */}
       <div className="flex-1 relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl">
         <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none" />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
         {feedback && (
           <div className={cn(
