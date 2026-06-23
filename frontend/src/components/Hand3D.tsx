@@ -145,9 +145,12 @@ export function Hand3D({ letter }: { letter: string }) {
     const scene = new THREE.Scene();
     scene.background = null;
 
+    // Hand landmarks are pre-scaled 3× in handPoses.ts.
+    // Wrist=origin, finger tips reach ~y=2.3, hand center ~y=1.1.
+    // Camera at z=2.8 with FOV 48 fills ~90% of height.
     const camera = new THREE.PerspectiveCamera(48, w / h, 0.01, 30);
-    camera.position.set(0.5, 1.5, 3.0);
-    camera.lookAt(0, 1.0, 0);
+    camera.position.set(0.4, 1.2, 2.8);
+    camera.lookAt(0, 0.9, 0);
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -158,10 +161,9 @@ export function Hand3D({ letter }: { letter: string }) {
     fill.position.set(-1, 0, 1);
     scene.add(fill);
 
-    // Hand group (we rotate this)
+    // Hand group (we rotate this). No extra scale — landmarks are already 3×.
     const group = new THREE.Group();
-    group.scale.setScalar(3);
-    group.position.set(0, -0.12, 0);
+    group.position.set(0, -0.3, 0);
     scene.add(group);
 
     const gradMap = makeGradMap();

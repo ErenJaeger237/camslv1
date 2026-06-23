@@ -151,6 +151,10 @@ export const HAND_CONNECTIONS: [number, number][] = [
   [5,9],[9,13],[13,17],
 ];
 
+// Scale applied to all landmark positions so the hand is large in the scene.
+// Camera in Hand3D.tsx is set for this scale.
+const HAND_SCALE = 3;
+
 /** Returns 63 floats: 21 (x,y,z) positions for the hand landmarks. */
 export function getLandmarks(letter: string): number[] {
   const pose = POSES[letter.toUpperCase()] ?? POSES['A'];
@@ -166,15 +170,15 @@ export function getLandmarks(letter: string): number[] {
   const pinky  = chain(MCP.pinky,  UP, BEND, pose.pinky.spread,
                        LENS.pinky,  [pose.pinky.mcp,  pose.pinky.pip,  pose.pinky.dip]);
 
-  // Assemble in MediaPipe landmark order
+  // Assemble in MediaPipe landmark order, scaled up
   const lms: V3[] = [
-    [0, 0, 0],                       // 0  wrist
-    THUMB_CMC, thumb[1], thumb[2], thumb[3],  // 1-4  thumb
-    index[0],  index[1],  index[2],  index[3],  // 5-8  index
-    middle[0], middle[1], middle[2], middle[3], // 9-12 middle
-    ring[0],   ring[1],   ring[2],   ring[3],   // 13-16 ring
-    pinky[0],  pinky[1],  pinky[2],  pinky[3],  // 17-20 pinky
+    [0, 0, 0],
+    THUMB_CMC, thumb[1], thumb[2], thumb[3],
+    index[0],  index[1],  index[2],  index[3],
+    middle[0], middle[1], middle[2], middle[3],
+    ring[0],   ring[1],   ring[2],   ring[3],
+    pinky[0],  pinky[1],  pinky[2],  pinky[3],
   ];
 
-  return lms.flat();
+  return lms.flat().map(v => v * HAND_SCALE);
 }
