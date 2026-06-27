@@ -27,7 +27,8 @@ const TIPS = new Set([4, 8, 12, 16, 20]);
  * @param videoW      video.videoWidth    — native camera resolution
  * @param videoH      video.videoHeight
  */
-export function drawSkeleton(
+/** Draw a single hand skeleton onto an already-cleared canvas. No clearRect. */
+export function drawSkeletonOnto(
   ctx: CanvasRenderingContext2D,
   landmarks: Point[],
   containerW: number,
@@ -35,24 +36,17 @@ export function drawSkeleton(
   videoW: number,
   videoH: number,
 ) {
-  ctx.clearRect(0, 0, containerW, containerH);
-
-  // ── object-cover maths ──────────────────────────────────────────────────
-  // The video is scaled so it covers the container (same as CSS object-cover)
   const scale = Math.max(containerW / videoW, containerH / videoH);
   const renderedW = videoW * scale;
   const renderedH = videoH * scale;
-  // Centered crop
   const offsetX = (containerW - renderedW) / 2;
   const offsetY = (containerH - renderedH) / 2;
 
-  // Map a landmark (0-1) → canvas pixel, mirroring x to match CSS flip
   const px = (lm: Point) => ({
     x: (1 - lm.x) * renderedW + offsetX,
     y: lm.y * renderedH + offsetY,
   });
 
-  // ── Draw connections ────────────────────────────────────────────────────
   ctx.save();
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = "#3ddbd9";
@@ -69,7 +63,6 @@ export function drawSkeleton(
     ctx.stroke();
   }
 
-  // ── Draw joints ─────────────────────────────────────────────────────────
   ctx.shadowBlur = 0;
   for (let i = 0; i < landmarks.length; i++) {
     const p = px(landmarks[i]);
@@ -84,6 +77,19 @@ export function drawSkeleton(
   }
 
   ctx.restore();
+}
+
+/** Clear then draw one hand — convenience wrapper used by SignToText. */
+export function drawSkeleton(
+  ctx: CanvasRenderingContext2D,
+  landmarks: Point[],
+  containerW: number,
+  containerH: number,
+  videoW: number,
+  videoH: number,
+) {
+  ctx.clearRect(0, 0, containerW, containerH);
+  drawSkeletonOnto(ctx, landmarks, containerW, containerH, videoW, videoH);
 }
 
 export function clearCanvas(ctx: CanvasRenderingContext2D, w: number, h: number) {

@@ -26,7 +26,16 @@ export type DetectResult = {
   handedness: string | null;
 };
 
-export function useMediaPipe() {
+export type DetectAllResult = {
+  hands: Array<{ landmarks: RawLandmark[]; handedness: string }>;
+};
+
+/**
+ * numHands: pass 2 to enable two-hand detection for word-sign contribution mode.
+ * The landmarker is recreated when numHands changes — WASM and the model file
+ * are browser-cached after the first load, so subsequent inits are fast (<500 ms).
+ */
+export function useMediaPipe(numHands: 1 | 2 = 1) {
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +43,7 @@ export function useMediaPipe() {
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
 
     (async () => {
       try {
@@ -47,14 +57,14 @@ export function useMediaPipe() {
           hl = await HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
             runningMode: "VIDEO",
-            numHands: 1,
+            numHands,
           });
         } catch {
           // GPU unavailable — fall back to CPU silently
           hl = await HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
             runningMode: "VIDEO",
-            numHands: 1,
+            numHands,
           });
         }
 
@@ -74,7 +84,7 @@ export function useMediaPipe() {
       landmarkerRef.current?.close();
       landmarkerRef.current = null;
     };
-  }, []);
+  }, [numHands]); // Recreated when numHands changes (mode switch)
 
   const detect = useCallback(
     (video: HTMLVideoElement): DetectResult => {
@@ -90,5 +100,22 @@ export function useMediaPipe() {
     [ready],
   );
 
-  return { ready, error, loadingMsg, detect };
+  // Returns all detected hands — used in word-sign mode (numHands=2)
+  const detectAll = useCallback(
+    (video: HTMLVideoElement): DetectAllResult => {
+      if (!landmarkerRef.current || !ready) return { hands: [] };
+      const result: HandLandmarkerResult =
+        landmarkerRef.current.detectForVideo(video, performance.now());
+      if (!result.landmarks?.length) return { hands: [] };
+      return {
+        hands: result.landmarks.map((lms, i) => ({
+          landmarks: lms as RawLandmark[],
+          handedness: result.handedness?.[i]?.[0]?.categoryName ?? "Right",
+        })),
+      };
+    },
+    [ready],
+  );
+
+  return { ready, error, loadingMsg, detect, detectAll };
 }

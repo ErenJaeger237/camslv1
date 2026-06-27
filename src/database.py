@@ -52,9 +52,6 @@ class LeitnerDB:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._path), timeout=5)
         conn.execute("PRAGMA journal_mode=WAL")   # allows concurrent readers
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_review_box ON leitner_stats(next_review, box)"
-        )
         return conn
 
     # ------------------------------------------------------------------
@@ -73,6 +70,9 @@ class LeitnerDB:
                     correct_attempts INTEGER DEFAULT 0
                 )
             """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_box ON leitner_stats(next_review, box)"
+            )
             conn.executemany(
                 "INSERT OR IGNORE INTO leitner_stats (letter) VALUES (?)",
                 [(ltr,) for ltr in self._labels],

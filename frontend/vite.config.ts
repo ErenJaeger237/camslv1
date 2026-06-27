@@ -12,8 +12,19 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: "http://localhost:8001",
         changeOrigin: true,
+      },
+    },
+    // Suppress "Failed to load source map" warnings from @mediapipe/tasks-vision.
+    // The package ships without its .map file — this is a known upstream issue.
+    sourcemapIgnoreList: (sourcePath) => sourcePath.includes("node_modules"),
+  },
+  build: {
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === "SOURCEMAP_ERROR") return;
+        warn(warning);
       },
     },
   },

@@ -46,6 +46,33 @@ export function normaliseLandmarks(landmarks: RawLandmark[]): Float32Array {
 export const FACE_KEY_LMS = [33, 133, 362, 263, 61, 291, 17, 0, 4, 152, 70, 105, 107, 336, 334, 300, 159, 145, 386, 374];
 export const POSE_KEY_LMS = [11, 12, 13, 14, 15, 16, 23, 24, 0];
 
+/**
+ * Two-hand feature vector for word-sign mode: 126 features per frame.
+ *
+ * Slot  0– 62: "Left"  hand as reported by MediaPipe (63 features, zeros if absent)
+ * Slot 63–125: "Right" hand as reported by MediaPipe (63 features, zeros if absent)
+ *
+ * MediaPipe's handedness labels are from the person's perspective, so "Left" =
+ * user's left hand, "Right" = user's right hand. The model learns this mapping
+ * from training data — the only requirement is that this ordering is consistent
+ * between data collection and inference.
+ */
+export function normaliseHandPair(
+  hands: Array<{ landmarks: RawLandmark[]; handedness: string }>,
+): Float32Array {
+  const out = new Float32Array(126); // all zeros by default (absent hand slots)
+  for (const hand of hands) {
+    const features = normaliseLandmarks(hand.landmarks);
+    const offset = hand.handedness === "Left" ? 0 : 63;
+    out.set(features, offset);
+  }
+  return out;
+}
+
+/**
+ * Holistic feature vector: hand(63) + face(60) + pose(27) = 150 features.
+ * Face and pose landmarks are optional — zeros if not detected.
+ */
 export function buildHolisticFeatures(
   handLms: RawLandmark[],
   faceLms: RawLandmark[] | null,

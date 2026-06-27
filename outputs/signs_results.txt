@@ -1,0 +1,39 @@
+========================================================
+  Word-Sign LSTM - Results
+========================================================
+
+Signs trained : [np.str_('bad'), np.str_('drink'), np.str_('eat'), np.str_('friend'), np.str_('good'), np.str_('goodbye'), np.str_('help'), np.str_('no'), np.str_('please'), np.str_('school'), np.str_('sick'), np.str_('sorry'), np.str_('thank_you'), np.str_('yes')]
+Total samples : 102
+Raw samples   : 102  (augmented 3x -> train set only)
+Split         : train=260 | val=16 | test=21
+
+Architecture
+  LSTM(64) -> Dropout(0.3) -> Dense(32) -> Dense(14)
+
+Results
+  Test accuracy   : 0.5238  (52.38%)
+  Training time   : 16.1 s  over 25 epochs
+  Inference speed : 2.46 ms / sequence
+  Model size      : 930.4 KB
+
+Per-class report
+              precision    recall  f1-score   support
+
+         bad       1.00      0.50      0.67         2
+       drink       0.00      0.00      0.00         1
+         eat       0.50      1.00      0.67         1
+      friend       0.00      0.00      0.00         1
+        good       0.50      0.50      0.50         2
+     goodbye       0.50      1.00      0.67         1
+        help       0.33      0.67      0.44         3
+          no       1.00      0.50      0.67         2
+      please       0.00      0.00      0.00         1
+      school       0.50      1.00      0.67         1
+        sick       0.00      0.00      0.00         2
+       sorry       1.00      1.00      1.00         1
+   thank_you       0.00      0.00      0.00         1
+         yes       0.67      1.00      0.80         2
+
+    accuracy                           0.52        21
+   macro avg       0.43      0.51      0.43        21
+weighted avg       0.47      0.52      0.46        21

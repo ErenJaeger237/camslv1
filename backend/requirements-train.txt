@@ -1,0 +1,5 @@
+# Install these locally when you need the /api/retrain endpoint to work.
+# Not installed on Railway (too large for the free tier).
+-r requirements.txt
+tensorflow>=2.15.0
+tensorflowjs>=4.17.0

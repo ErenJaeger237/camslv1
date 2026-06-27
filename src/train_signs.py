@@ -78,6 +78,7 @@ VAL_SIZE              = 0.15
 RANDOM_STATE          = 42
 EARLY_STOP_PATIENCE   = 12
 MIN_SAMPLES_PER_CLASS = 5       # signs with fewer samples are skipped with a warning
+AUGMENT_FACTOR        = 3       # multiply training samples (noise + time-warp)
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +119,7 @@ def load_sequences() -> tuple[np.ndarray, np.ndarray, LabelEncoder]:
             y_list.append(sign)
 
     if skipped:
-        print("WARNING — signs skipped (too few samples):")
+        print("WARNING - signs skipped (too few samples):")
         print("\n".join(skipped))
 
     if not X_list:
@@ -137,6 +138,51 @@ def load_sequences() -> tuple[np.ndarray, np.ndarray, LabelEncoder]:
         print(f"  {name:<12} {(y == i).sum()} samples")
     print()
     return X, y, le
+
+
+# ---------------------------------------------------------------------------
+# Data augmentation
+# ---------------------------------------------------------------------------
+
+def _time_warp(seq: np.ndarray, rate: float) -> np.ndarray:
+    """Resample a (T, F) sequence at a slightly different speed, keeping T frames."""
+    T, F = seq.shape
+    src_indices = np.linspace(0, T - 1, int(T * rate))
+    src_indices = np.clip(src_indices, 0, T - 1)
+    warped = np.zeros_like(seq)
+    for i, idx in enumerate(np.linspace(0, len(src_indices) - 1, T)):
+        lo = int(idx); hi = min(lo + 1, len(src_indices) - 1)
+        a = idx - lo
+        si_lo = src_indices[lo]; si_hi = src_indices[hi]
+        fi = (1 - a) * si_lo + a * si_hi
+        fi_lo = int(fi); fi_hi = min(fi_lo + 1, T - 1)
+        t = fi - fi_lo
+        warped[i] = (1 - t) * seq[fi_lo] + t * seq[fi_hi]
+    return warped.astype(np.float32)
+
+
+def augment_sequences(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Produce AUGMENT_FACTOR copies of every sample using:
+      - Gaussian noise (sigma 0.003–0.006)
+      - Time-warp (speed 90–110%)
+    Returns the original samples plus all augmented copies.
+    """
+    rng = np.random.default_rng(42)
+    X_aug, y_aug = [X], [y]
+    for _ in range(AUGMENT_FACTOR):
+        X_new = np.empty_like(X)
+        for i, seq in enumerate(X):
+            sigma = rng.uniform(0.003, 0.006)
+            noisy = seq + rng.normal(0, sigma, seq.shape).astype(np.float32)
+            rate = rng.uniform(0.90, 1.10)
+            X_new[i] = _time_warp(noisy, rate)
+        X_aug.append(X_new)
+        y_aug.append(y.copy())
+    X_out = np.concatenate(X_aug, axis=0)
+    y_out = np.concatenate(y_aug, axis=0)
+    idx = rng.permutation(len(X_out))
+    return X_out[idx], y_out[idx]
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +289,10 @@ def main() -> None:
     )
     print(f"Split  ->  train: {len(X_train)}  |  val: {len(X_val)}  |  test: {len(X_test)}\n")
 
+    # ── Augment training set only (val/test stay clean) ───────────────────
+    X_train, y_train = augment_sequences(X_train, y_train)
+    print(f"After augmentation -> train: {len(X_train)}  |  val: {len(X_val)}  |  test: {len(X_test)}\n")
+
     # ── Build & compile ───────────────────────────────────────────────────
     model = build_lstm(num_classes)
     model.compile(
@@ -302,11 +352,12 @@ def main() -> None:
     # ── Results file ──────────────────────────────────────────────────────
     results = "\n".join([
         "=" * 56,
-        "  Word-Sign LSTM — Results",
+        "  Word-Sign LSTM - Results",
         "=" * 56,
         "",
         f"Signs trained : {class_names}",
         f"Total samples : {len(X)}",
+        f"Raw samples   : {len(X)}  (augmented {AUGMENT_FACTOR}x -> train set only)",
         f"Split         : train={len(X_train)} | val={len(X_val)} | test={len(X_test)}",
         "",
         "Architecture",

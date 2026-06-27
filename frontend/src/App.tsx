@@ -1,5 +1,8 @@
 import { useAppStore } from "./store/appStore";
+import { SplashScreen } from "./components/SplashScreen";
 import { LoginPage } from "./components/LoginPage";
+import { ProfileSetup } from "./components/ProfileSetup";
+import { OnboardingSlides } from "./components/OnboardingSlides";
 import { Layout } from "./components/Layout";
 import { SignToText } from "./components/SignToText";
 import { TextToSign } from "./components/TextToSign";
@@ -8,9 +11,12 @@ import { DatasetPanel } from "./components/DatasetPanel";
 import { ChatPanel } from "./components/ChatPanel";
 
 export default function App() {
-  const { token, activeTab } = useAppStore();
+  const { appPhase, activeTab } = useAppStore();
 
-  if (!token) return <LoginPage />;
+  if (appPhase === "splash")        return <SplashScreen />;
+  if (appPhase === "login")         return <LoginPage />;
+  if (appPhase === "profile-setup") return <ProfileSetup />;
+  if (appPhase === "onboarding")    return <OnboardingSlides />;
 
   return (
     <Layout>

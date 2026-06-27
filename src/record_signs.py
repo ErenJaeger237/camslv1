@@ -36,9 +36,11 @@ CAMERA_ID         = 0
 
 SIGNS = [
     "hello",    "thank_you", "yes",     "no",      "please",
-    "help",     "sorry",     "goodbye", "name",
-    "eat",      "drink",     "water",   "good",     "bad",    "friend",
+    "help",     "sorry",     "goodbye", "sick",
+    "eat",      "drink",     "school",  "good",    "bad",    "friend",
 ]
+# Note: "water" and "name" (ASL initialized signs) replaced with "sick" and "school"
+# which are more universal and present in CamSL / LSF-derived vocabularies.
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "signs"
 

@@ -51,6 +51,9 @@ export const recordPracticeResult = (
     recent,
   });
 
+export const getPracticeTip = (target: string, detected: string) =>
+  post<{ tip: string; source: "ai" | "static" }>("/api/practice/tip", { target, detected });
+
 // ── Contributions ─────────────────────────────────────────────────────────────
 export const addContribution = (label: string, features: number[]) =>
   post<{ ok: boolean }>("/api/contributions", { label, features });
@@ -60,6 +63,16 @@ export const getContributionCounts = () =>
 
 export const deleteLastContribution = () =>
   del<{ ok: boolean; remaining: number }>("/api/contributions/last");
+
+// ── Word-sign Contributions ───────────────────────────────────────────────────
+export const addWordContribution = (sign: string, sequence: number[][]) =>
+  post<{ ok: boolean }>("/api/word-contributions", { sign, sequence });
+
+export const getWordContributionCounts = () =>
+  get<{ counts: Record<string, number>; total: number }>("/api/word-contributions/counts");
+
+export const deleteLastWordContribution = () =>
+  del<{ ok: boolean; sign: string }>("/api/word-contributions/last");
 
 // ── Retrain ───────────────────────────────────────────────────────────────────
 export const triggerRetrain = () =>

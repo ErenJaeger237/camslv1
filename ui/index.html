@@ -1569,6 +1569,30 @@
           <div class="staging-word" id="chatStagingWord" style="color:var(--purple)">▊</div>
         </div>
 
+        <!-- API Key notice — shown only when key is not yet stored -->
+        <div id="chatApiKeyNotice" style="
+          display:none;
+          background:linear-gradient(135deg,rgba(139,92,246,0.18),rgba(99,102,241,0.10));
+          border:1px solid rgba(139,92,246,0.45);
+          border-radius:12px;
+          padding:16px 20px;
+          margin-bottom:12px;
+          animation:fadeIn .35s ease;
+        ">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span style="font-weight:600;color:#a78bfa;font-size:0.88rem;letter-spacing:.04em;">GEMINI API KEY REQUIRED</span>
+          </div>
+          <p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 12px;line-height:1.5;">The AI Chat feature requires a free Gemini API key. Get yours at <a href="#" style="color:#a78bfa;" onclick="return false;">aistudio.google.com</a> and paste it below.</p>
+          <div style="display:flex;gap:8px;">
+            <input id="chatApiKeyInput" type="password"
+              placeholder="Paste your Gemini API key…"
+              style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(139,92,246,0.4);border-radius:8px;color:var(--text);padding:8px 12px;font-size:0.84rem;outline:none;"
+              onkeydown="if(event.key==='Enter') saveChatApiKey()">
+            <button onclick="saveChatApiKey()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:0.84rem;cursor:pointer;white-space:nowrap;">Save Key</button>
+          </div>
+        </div>
+
         <div class="chat-history" id="chatHistory">
           <div class="chat-bubble model">
             <div class="chat-bubble-text">Hello! I'm your CamSL AI assistant. You can sign or type a message and I'll chat with you. How can I help you learn or translate today?</div>
@@ -1760,6 +1784,9 @@ function setScreen(name) {
   // Init Three.js scenes lazily
   if (name === 'practice' && !threeRenderer)    initThreeJS();
   if (name === 'avatar'   && !avatarRenderer)   initAvatarScene();
+
+  // Show API-key notice proactively when Chat tab is opened
+  if (name === 'chat') checkChatApiKey();
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -2185,17 +2212,29 @@ async function sendChatMessage() {
 
   let apiKey = localStorage.getItem('GEMINI_API_KEY') || null;
 
+  // If no key stored, show the in-panel notice and abort this send
+  if (!apiKey) {
+    const notice = document.getElementById('chatApiKeyNotice');
+    if (notice) notice.style.display = 'block';
+    // Re-enable UI so user can type the key
+    inp.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+    // Remove the optimistic user bubble since send was aborted
+    chatHistory.pop();
+    renderChatHistory();
+    return;
+  }
+
   try {
     let res = await window.pywebview.api.send_chat_message(txt, chatHistory.slice(0, -1), apiKey);
     
     if (res.error === 'GEMINI_API_KEY_MISSING') {
-      apiKey = prompt('Please enter your Gemini API Key to use the AI chat assistant (it will be saved locally):');
-      if (apiKey) {
-        localStorage.setItem('GEMINI_API_KEY', apiKey.trim());
-        res = await window.pywebview.api.send_chat_message(txt, chatHistory.slice(0, -1), apiKey.trim());
-      } else {
-        res = { error: 'You need an API key to use this feature. Get one for free at https://aistudio.google.com/' };
-      }
+      // Key was rejected server-side — clear stored key and show notice
+      localStorage.removeItem('GEMINI_API_KEY');
+      const notice = document.getElementById('chatApiKeyNotice');
+      if (notice) notice.style.display = 'block';
+      res = { error: 'API key was invalid or expired. Please enter a new key above.' };
     }
 
     if (res.error) {
@@ -2214,6 +2253,37 @@ async function sendChatMessage() {
 
   if (window.pywebview) await window.pywebview.api.clear_text().catch(() => {});
   chatLastText = ''; chatLastWord = '';
+}
+
+/**
+ * saveChatApiKey — called by the in-panel API key notice.
+ * Saves the key to localStorage and hides the notice banner.
+ */
+function saveChatApiKey() {
+  const inp    = document.getElementById('chatApiKeyInput');
+  const notice = document.getElementById('chatApiKeyNotice');
+  if (!inp) return;
+  const key = inp.value.trim();
+  if (!key) {
+    inp.style.borderColor = '#ef4444';
+    setTimeout(() => { inp.style.borderColor = 'rgba(139,92,246,0.4)'; }, 1200);
+    return;
+  }
+  localStorage.setItem('GEMINI_API_KEY', key);
+  inp.value = '';
+  if (notice) notice.style.display = 'none';
+  showToast('API key saved — you can now use AI Chat!');
+}
+
+/**
+ * checkChatApiKey — call when the Chat tab is opened.
+ * Shows the API key notice proactively if no key is stored yet.
+ */
+function checkChatApiKey() {
+  const notice = document.getElementById('chatApiKeyNotice');
+  if (!notice) return;
+  const hasKey = !!localStorage.getItem('GEMINI_API_KEY');
+  notice.style.display = hasKey ? 'none' : 'block';
 }
 
 /* ══════════════════════════════════════════════════════════════════════

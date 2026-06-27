@@ -16,7 +16,7 @@ async function apiAuth(path: string, body: { username: string; password: string 
 }
 
 export function LoginPage() {
-  const { setAuth } = useAppStore();
+  const { loginSuccess, registerSuccess } = useAppStore();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +30,11 @@ export function LoginPage() {
     try {
       const path = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const res = await apiAuth(path, { username: username.trim(), password });
-      setAuth(res.token, res.username, res.user_id);
+      if (mode === "login") {
+        loginSuccess(res.token, res.username, res.user_id);
+      } else {
+        registerSuccess(res.token, res.username, res.user_id);
+      }
     } catch (err) {
       setError(String(err).replace("Error: ", ""));
     } finally {
