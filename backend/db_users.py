@@ -10,6 +10,7 @@ import hashlib
 import secrets
 import sqlite3
 import time
+import re
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "data" / "users.db"
@@ -52,8 +53,12 @@ def register(username: str, password: str) -> dict:
     """Create a new user. Returns {token, username} or raises ValueError."""
     if len(username) < 2 or len(username) > 32:
         raise ValueError("Username must be 2–32 characters.")
+    if not re.match(r"^[a-zA-Z0-9_]+$", username):
+        raise ValueError("Username can only contain letters, numbers, and underscores.")
     if len(password) < 6:
         raise ValueError("Password must be at least 6 characters.")
+    if len(password) > 100:
+        raise ValueError("Password must be less than 100 characters.")
 
     salt = secrets.token_hex(16)
     pw_hash = f"{salt}:{_hash(password, salt)}"
@@ -90,8 +95,9 @@ def login(username: str, password: str) -> dict:
 def _make_session(user_id: str, username: str) -> dict:
     token = secrets.token_hex(32)
     with _conn() as con:
-        # Remove old sessions for this user (one active session per user)
-        con.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        # Remove expired sessions (older than 30 days) to prevent database bloat
+        expiry_seconds = 30 * 24 * 60 * 60
+        con.execute("DELETE FROM sessions WHERE user_id=? AND ? - created > ?", (user_id, time.time(), expiry_seconds))
         con.execute(
             "INSERT INTO sessions (token, user_id, username, created) VALUES (?,?,?,?)",
             (token, user_id, username, time.time()),
@@ -103,6 +109,15 @@ def verify_token(token: str) -> dict | None:
     """Return {user_id, username} for a valid token, else None."""
     with _conn() as con:
         row = con.execute(
-            "SELECT user_id, username FROM sessions WHERE token=?", (token,)
+            "SELECT user_id, username, created FROM sessions WHERE token=?", (token,)
         ).fetchone()
-    return dict(row) if row else None
+        
+        if not row:
+            return None
+            
+        # Check if session is older than 30 days
+        if time.time() - row["created"] > 30 * 24 * 60 * 60:
+            con.execute("DELETE FROM sessions WHERE token=?", (token,))
+            return None
+            
+    return {"user_id": row["user_id"], "username": row["username"]}
