@@ -146,184 +146,169 @@ export function SignToText() {
   const confPct = Math.round(localConf * 100);
 
   return (
-    <div className="relative flex-1 w-full h-full bg-black overflow-hidden flex flex-col items-center">
-      {/* ── Cinematic Camera Layer ── */}
-      <div className="absolute inset-0 bg-navy-950 flex items-center justify-center overflow-hidden pointer-events-none">
-        {camError ? (
-          <div className="flex flex-col items-center justify-center gap-4 p-8 pointer-events-auto">
-            <div className="w-16 h-16 rounded-2xl bg-red-900/40 border border-red-700/50 flex items-center justify-center shadow-lg shadow-red-900/50">
-              <XIcon className="w-8 h-8 text-red-400" />
+    <div className="flex gap-4 p-4 h-full">
+      {/* ── Webcam column ── */}
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+
+        {/* Camera card — video is ALWAYS visible once cam is granted */}
+        <div className="relative rounded-3xl overflow-hidden bg-navy-900/40 backdrop-blur-xl border border-white/10 shadow-[0_0_40px_rgba(45,212,191,0.1)] flex-1 min-h-0 ring-1 ring-white/5">
+
+          {/* Camera blocked — full overlay only when we truly have no feed */}
+          {camError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 bg-navy-900">
+              <div className="w-12 h-12 rounded-2xl bg-red-900/60 border border-red-700/50 flex items-center justify-center">
+                <XIcon className="w-6 h-6 text-red-400" />
+              </div>
+              <p className="text-sm text-red-300 text-center max-w-xs">{camError}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-1.5 rounded-xl bg-red-800/60 hover:bg-red-700/60 text-sm text-red-200 transition-colors cursor-pointer border border-red-700/40"
+              >
+                Reload &amp; retry
+              </button>
             </div>
-            <p className="text-red-300 font-medium text-center max-w-sm">{camError}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-2.5 rounded-xl bg-red-800/80 hover:bg-red-700/80 text-white font-medium transition-all cursor-pointer border border-red-700/50 shadow-lg"
-            >
-              Reload &amp; retry
-            </button>
-          </div>
-        ) : (
-          <div className="relative w-full h-full pointer-events-auto">
-            {/* Live video */}
-            <video
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-              autoPlay
-              muted
-              playsInline
-            />
+          ) : (
+            <>
+              {/* Live video */}
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover scale-x-[-1]"
+                autoPlay
+                muted
+                playsInline
+              />
 
-            {/* Skeleton overlay */}
-            <canvas
-              ref={canvasRef}
-              className="absolute inset-0 w-full h-full pointer-events-none object-cover"
-            />
+              {/* Skeleton overlay */}
+              <canvas
+                ref={canvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+              />
 
-            {/* Cinematic Gradients */}
-            <div className="absolute inset-0 bg-gradient-to-b from-navy-950/80 via-transparent to-navy-950/95 pointer-events-none" />
-            
-            {/* Glowing active border */}
-            <div className={cn(
-              "absolute inset-0 border-[3px] rounded-sm transition-all duration-500 pointer-events-none",
-              mpReady ? "border-teal-500/20 shadow-[inset_0_0_100px_rgba(43,196,194,0.1)]" : "border-transparent"
-            )} />
+              {/* ── Top-left status chips ── */}
+              <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
+                <span className="bg-black/50 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-slate-300 font-mono border border-white/10">
+                  {fps} fps
+                </span>
+                {mpReady ? (
+                  <span className="bg-teal-700/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
+                    Hand detection ✓
+                  </span>
+                ) : mpError ? (
+                  <span className="bg-red-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-red-300 border border-red-700/40 max-w-[200px] truncate" title={mpError}>
+                    MP error — check console
+                  </span>
+                ) : (
+                  <span className="bg-yellow-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-yellow-300 border border-yellow-700/40 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                    {loadingMsg}
+                  </span>
+                )}
+                {tfReady && (
+                  <span className="bg-teal-700/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
+                    TF.js ✓
+                  </span>
+                )}
+              </div>
+
+              {/* ── Detected letter badge ── */}
+              {localLetter && mpReady && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
+                  <div className="bg-navy-950/60 backdrop-blur-xl border border-teal-500/30 rounded-3xl px-8 py-4 flex flex-col items-center shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/10">
+                    <span
+                      className="text-7xl font-bold text-teal-400 leading-none"
+                      style={{ fontFamily: "'Fira Code', monospace" }}
+                    >
+                      style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 20px rgba(45,212,191,0.5)" }}
+                    >
+                      {localLetter}
+                    </span>
+                    <div className="w-32 h-1.5 bg-navy-900/80 rounded-full overflow-hidden mt-3 ring-1 ring-white/5">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all duration-150",
+                          localConf > 0.9 ? "bg-teal-400" : localConf > 0.75 ? "bg-yellow-400" : "bg-red-400",
+                        )}
+                        style={{ width: `${confPct}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-0.5">{confPct}% confidence</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Autocomplete suggestions */}
+        {suggestions.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                onClick={() => handleSuggestion(s)}
+                className="px-5 py-2 bg-navy-800/60 backdrop-blur-md hover:bg-teal-500/20 text-sm rounded-xl transition-all duration-300 border border-white/10 hover:border-teal-500/50 hover:shadow-[0_0_15px_rgba(45,212,191,0.2)] cursor-pointer font-medium text-slate-200 hover:text-teal-300"
+              >
+                {s}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── UI Overlay Layer ── */}
-      <div className="absolute inset-0 p-6 flex flex-col justify-between pointer-events-none z-10">
-        
-        {/* Top Header Row (Status Chips & Alphabet) */}
-        <div className="flex justify-between items-start w-full">
-          {/* Status chips */}
-          <div className="flex gap-2 flex-wrap max-w-sm pointer-events-auto">
-            <span className="bg-navy-900/60 backdrop-blur-md px-3 py-1.5 rounded-xl text-slate-300 font-mono text-xs border border-white/10 shadow-lg">
-              {fps} fps
-            </span>
-            {mpReady ? (
-              <span className="bg-teal-500/20 backdrop-blur-md px-3 py-1.5 rounded-xl text-teal-300 text-xs font-medium border border-teal-500/30 shadow-lg">
-                Vision Active
-              </span>
-            ) : mpError ? (
-              <span className="bg-red-900/60 backdrop-blur-md px-3 py-1.5 rounded-xl text-red-300 text-xs border border-red-700/40 shadow-lg" title={mpError}>
-                Error
-              </span>
-            ) : (
-              <span className="bg-yellow-900/60 backdrop-blur-md px-3 py-1.5 rounded-xl text-yellow-300 text-xs border border-yellow-700/40 flex items-center gap-2 shadow-lg">
-                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                {loadingMsg}
-              </span>
-            )}
-            {tfReady && (
-              <span className="bg-teal-500/20 backdrop-blur-md px-3 py-1.5 rounded-xl text-teal-300 text-xs font-medium border border-teal-500/30 shadow-lg">
-                AI Ready
-              </span>
-            )}
-          </div>
+      {/* ── Output column ── */}
+      <div className="w-72 flex flex-col gap-3 shrink-0">
 
-          {/* Floating Alphabet Card */}
-          <div className="bg-navy-900/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-4 shadow-2xl pointer-events-auto hidden md:block">
-            <p className="text-[10px] text-teal-400/80 uppercase tracking-widest mb-3 font-semibold text-center">Reference</p>
-            <div className="grid grid-cols-6 gap-1.5">
-              {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
-                <button key={l}
-                  className={cn(
-                    "w-8 h-8 flex items-center justify-center text-[11px] font-mono rounded-lg transition-all duration-300 cursor-pointer",
-                    localLetter === l
-                      ? "bg-teal-500 text-navy-950 font-bold shadow-[0_0_15px_rgba(43,196,194,0.5)] scale-110"
-                      : "bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5",
-                  )}
-                  onClick={() => speak(l)}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
+        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5">
+          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-2 font-bold">Signing</p>
+          <p className="text-4xl font-bold text-white min-h-[3rem] leading-tight drop-shadow-md" style={{ fontFamily: "'Fira Code', monospace" }}>
+            {localWord || <span className="text-slate-500 font-normal text-xl">waiting…</span>}
+          </p>
+        </div>
+
+        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5 flex-1">
+          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-3 font-bold">Text</p>
+          <div className="text-[15px] text-white leading-relaxed break-words min-h-[5rem]">
+            {localSentence && <span className="text-slate-300">{localSentence}</span>}
+            {localWord && <span className="text-teal-400 font-semibold">{localWord}</span>}
+            {!fullText && <span className="text-slate-600 text-sm">Start signing to build words…</span>}
           </div>
         </div>
 
-        {/* Bottom Area (Live Translation) */}
-        <div className="w-full flex flex-col items-center pb-4">
-          
-          {/* Huge Detected Letter / Word Overlay */}
-          <div className="mb-8 flex flex-col items-center">
-            {localLetter && mpReady && (
-              <div className="mb-4">
-                <span className="text-[140px] font-bold text-teal-400 leading-none drop-shadow-[0_0_40px_rgba(43,196,194,0.4)]" style={{ fontFamily: "'Outfit', sans-serif" }}>
-                  {localLetter}
-                </span>
-                <div className="w-32 h-1.5 bg-navy-900/80 rounded-full overflow-hidden mt-4 mx-auto border border-white/10">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all duration-300",
-                      localConf > 0.9 ? "bg-teal-400 shadow-[0_0_10px_rgba(61,219,217,1)]" : localConf > 0.75 ? "bg-yellow-400" : "bg-red-400"
-                    )}
-                    style={{ width: `${confPct}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            
-            {localWord && (
-               <h2 className="text-6xl md:text-7xl font-bold text-white drop-shadow-2xl tracking-tight" style={{ fontFamily: "'Outfit', sans-serif" }}>
-                 {localWord}
-                 <span className="text-teal-400 animate-pulse ml-1">_</span>
-               </h2>
-            )}
-          </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSpeak}
+            disabled={!fullText}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-bold text-sm transition-all duration-300 cursor-pointer shadow-[0_0_20px_rgba(45,212,191,0.3)] hover:shadow-[0_0_30px_rgba(45,212,191,0.5)] transform hover:-translate-y-0.5"
+          >
+            <VolumeIcon className="w-4 h-4" /> Speak
+          </button>
+          <button onClick={handleBackspace} title="Backspace"
+            className="w-12 flex items-center justify-center rounded-2xl bg-navy-800/60 backdrop-blur-md hover:bg-navy-700/80 transition-all duration-300 cursor-pointer border border-white/10 hover:border-white/20 shadow-lg transform hover:-translate-y-0.5 text-slate-300 hover:text-white">
+            <DeleteIcon className="w-5 h-5" />
+          </button>
+          <button onClick={handleClear} title="Clear"
+            className="w-12 flex items-center justify-center rounded-2xl bg-navy-800/60 backdrop-blur-md hover:bg-red-500/20 transition-all duration-300 cursor-pointer border border-white/10 hover:border-red-500/50 shadow-lg transform hover:-translate-y-0.5 text-slate-300 hover:text-red-400">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Autocomplete Suggestions */}
-          {suggestions.length > 0 && (
-            <div className="flex gap-3 flex-wrap justify-center mb-6 pointer-events-auto">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => handleSuggestion(s)}
-                  className="px-5 py-2 bg-navy-800/80 backdrop-blur-xl hover:bg-teal-500 text-slate-200 hover:text-navy-950 text-sm rounded-2xl transition-all duration-300 border border-white/10 hover:border-teal-400 hover:shadow-[0_0_20px_rgba(43,196,194,0.3)] cursor-pointer font-medium hover:-translate-y-1"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Main Subtitle / Translation Card */}
-          <div className="max-w-4xl w-full bg-navy-900/75 backdrop-blur-3xl border border-white/10 shadow-2xl rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 transition-all duration-500 pointer-events-auto relative overflow-hidden">
-            {/* Glossy highlight effect inside the card */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none" />
-            
-            <div className="flex-1 w-full relative z-10">
-              <p className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-2">Live Translation</p>
-              <div className="text-2xl md:text-3xl text-white font-medium leading-relaxed min-h-[4rem] flex items-end">
-                <span>
-                  {localSentence && <span className="text-slate-200">{localSentence} </span>}
-                  {localWord && <span className="text-teal-300">{localWord}</span>}
-                  {!fullText && <span className="text-slate-500 italic text-xl">Start signing to construct a sentence...</span>}
-                </span>
-              </div>
-            </div>
-            
-            {/* Action buttons (Speak, Clear, Backspace) */}
-            <div className="flex gap-3 shrink-0 relative z-10 w-full md:w-auto">
-              <button
-                onClick={handleSpeak}
-                disabled={!fullText}
-                className="flex-1 md:w-32 flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 disabled:from-navy-800 disabled:to-navy-800 disabled:text-slate-500 text-navy-950 font-bold transition-all duration-300 cursor-pointer shadow-lg hover:shadow-teal-500/30 hover:-translate-y-0.5"
+        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5">
+          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-3 font-bold">Alphabet</p>
+          <div className="grid grid-cols-6 gap-1.5">
+            {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
+              <button key={l}
+                className={cn(
+                  "aspect-square flex items-center justify-center text-xs font-mono rounded-xl transition-all duration-300 cursor-pointer border",
+                  localLetter === l
+                    ? "bg-teal-500 text-navy-950 font-bold border-teal-400 shadow-[0_0_15px_rgba(45,212,191,0.5)] transform scale-110 z-10"
+                    : "bg-navy-800/40 hover:bg-navy-700/60 text-slate-400 hover:text-slate-200 border-white/5 hover:border-white/20",
+                )}
+                onClick={() => speak(l)}
               >
-                <VolumeIcon className="w-5 h-5" /> Speak
+                {l}
               </button>
-              <button onClick={handleBackspace} title="Backspace"
-                className="w-14 flex items-center justify-center rounded-2xl bg-white/5 hover:bg-white/10 transition-all cursor-pointer border border-white/10 hover:-translate-y-0.5">
-                <DeleteIcon className="w-5 h-5 text-slate-300" />
-              </button>
-              <button onClick={handleClear} title="Clear"
-                className="w-14 flex items-center justify-center rounded-2xl bg-white/5 hover:bg-red-500/20 transition-all cursor-pointer border border-white/10 hover:border-red-500/50 hover:-translate-y-0.5 hover:text-red-400">
-                <XIcon className="w-5 h-5" />
-              </button>
-            </div>
+            ))}
           </div>
-          
         </div>
       </div>
     </div>

@@ -74,7 +74,8 @@ export function Layout({ children }: { children: ReactNode }) {
       </header>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">{children}</main>
+      <main className="flex-1 overflow-auto">{children}</main>
+
 
     </div>
   );
