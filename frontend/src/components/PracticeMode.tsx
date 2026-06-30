@@ -217,8 +217,8 @@ export function PracticeMode() {
         </div>
 
         {/* Camera feed */}
-        <div className="relative flex-1 rounded-2xl overflow-hidden bg-navy-900 border border-white/8 shadow-[0_16px_48px_rgba(0,0,0,0.5)] min-h-0">
-          <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
+        <div className="relative flex-1 rounded-2xl overflow-hidden bg-navy-900 border border-white/8 shadow-[0_16px_48px_rgba(0,0,0,0.5)] min-h-[420px]">
+          <video ref={videoRef} className="w-full h-full object-contain scale-x-[-1]" autoPlay muted playsInline />
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
           {/* Feedback overlay */}
