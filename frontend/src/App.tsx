@@ -20,7 +20,7 @@ export default function App() {
 
   return (
     <Layout>
-      <div className="h-[calc(100vh-8rem)]">
+      <div className="flex-1 w-full flex flex-col relative">
         {activeTab === "sign2text" && <SignToText />}
         {activeTab === "text2sign" && <TextToSign />}
         {activeTab === "practice"  && <PracticeMode />}
