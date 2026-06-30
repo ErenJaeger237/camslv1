@@ -5,7 +5,6 @@ import { Hand3D } from "./Hand3D";
 
 const KNOWN_LETTERS = new Set("ABCDEFGHIKLMNOPQRSTUVWXY".split(""));
 const DELAY_MS = 900;
-// Neutral letter shown when idle / during spaces
 const IDLE_LETTER = "B";
 
 export function TextToSign() {
@@ -43,58 +42,69 @@ export function TextToSign() {
   };
 
   return (
-    <div className="p-4 flex gap-4 h-full">
-      {/* Controls */}
-      <div className="w-80 flex flex-col gap-3 shrink-0">
-        <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow-lg">
-          <label className="text-[10px] text-slate-500 uppercase tracking-widest block mb-2.5 font-semibold">
+    <div className="p-6 flex gap-6 h-full">
+
+      {/* ── Controls column ── */}
+      <div className="w-80 flex flex-col gap-4 shrink-0">
+
+        {/* Input card */}
+        <div className="glass-card p-5">
+          <label className="label-xs block mb-3">
             Type text to display as signs
           </label>
           <textarea
-            className="w-full bg-navy-900 text-white rounded-xl p-3 text-sm resize-none border border-navy-600 focus:border-teal-500 focus:outline-none h-32 transition-colors"
+            className="w-full bg-navy-900/60 text-white rounded-xl p-3.5 text-sm resize-none
+                       border border-white/8 focus:border-teal-500/60 focus:outline-none
+                       focus:shadow-[0_0_0_3px_rgba(45,212,191,0.12)]
+                       h-32 transition-all duration-300 placeholder:text-slate-600"
             placeholder="Hello world…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
         </div>
 
-        <div className="flex gap-2">
+        {/* Action buttons — primary + secondary */}
+        <div className="flex gap-3">
+          {/* PRIMARY */}
           <button
             onClick={playing ? handleStop : () => playSequence(input)}
             disabled={!input.trim()}
-            className="flex-1 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold text-sm transition-all duration-200 cursor-pointer shadow-lg shadow-teal-900/30"
+            className="btn-primary flex-1"
           >
             {playing ? "⏹ Stop" : "▶ Show Signs"}
           </button>
+          {/* SECONDARY */}
           <button
             onClick={() => input.trim() && speak(input)}
             disabled={!input.trim()}
-            className="w-11 flex items-center justify-center rounded-xl bg-navy-700 hover:bg-navy-600 transition-colors cursor-pointer border border-navy-600 disabled:opacity-40"
+            title="Read aloud"
+            className="btn-ghost w-12 px-0"
           >
             <VolumeIcon className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 text-xs text-slate-400 space-y-1.5">
-          <p className="text-slate-200 font-semibold text-sm mb-1">How it works</p>
+        {/* Info card */}
+        <div className="glass-card p-4 text-xs text-slate-400 space-y-2 leading-relaxed">
+          <p className="text-slate-200 font-semibold text-sm">How it works</p>
           <p>The 3D hand signs each letter for {DELAY_MS / 1000}s, animating smoothly between them.</p>
           <p>Spaces create brief pauses. J and Z are excluded (motion signs).</p>
         </div>
       </div>
 
-      {/* 3D sign display */}
-      <div className="flex-1 relative bg-navy-900 rounded-2xl border border-navy-700/60 shadow-xl overflow-hidden">
+      {/* ── 3D sign display ── */}
+      <div className="flex-1 relative bg-navy-900 rounded-2xl border border-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_16px_48px_rgba(0,0,0,0.5)] overflow-hidden">
         <Hand3D letter={currentChar} />
 
         {/* Current letter badge — bottom centre */}
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 pointer-events-none">
-          <div className={`px-6 py-2 rounded-2xl border backdrop-blur-sm transition-colors duration-300 ${
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none">
+          <div className={`px-7 py-3 rounded-2xl border backdrop-blur-xl transition-all duration-300 ${
             isIdle
-              ? "bg-navy-800/70 border-navy-600/40"
-              : "bg-teal-900/70 border-teal-500/50 shadow-lg shadow-teal-900/30"
+              ? "bg-navy-900/60 border-white/8"
+              : "bg-teal-950/70 border-teal-500/40 shadow-[0_0_24px_rgba(45,212,191,0.25)]"
           }`}>
             <span
-              className={`text-5xl font-bold leading-none ${isIdle ? "text-slate-500" : "text-teal-300"}`}
+              className={`text-5xl font-bold leading-none ${isIdle ? "text-slate-600" : "text-teal-300"}`}
               style={{ fontFamily: "'Fira Code', monospace" }}
             >
               {isIdle ? "—" : currentChar}
@@ -104,8 +114,8 @@ export function TextToSign() {
 
         {/* Idle hint */}
         {isIdle && !playing && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none">
-            <span className="text-[11px] text-slate-600 uppercase tracking-widest">
+          <div className="absolute top-5 left-1/2 -translate-x-1/2 pointer-events-none">
+            <span className="text-[10px] text-slate-600 uppercase tracking-[0.15em]">
               Type text and press Show Signs
             </span>
           </div>

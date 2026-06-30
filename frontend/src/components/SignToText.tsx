@@ -12,6 +12,26 @@ import { VolumeIcon, DeleteIcon, XIcon } from "./icons";
 
 const builder = new WordBuilder();
 
+// ── Circular confidence ring ──────────────────────────────────────
+function ConfRing({ pct }: { pct: number }) {
+  const r = 18;
+  const circ = 2 * Math.PI * r;
+  const color = pct >= 90 ? "#2dd4bf" : pct >= 75 ? "#facc15" : "#f87171";
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48" className="rotate-[-90deg]">
+      <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
+      <circle
+        cx="24" cy="24" r={r}
+        fill="none" stroke={color} strokeWidth="4"
+        strokeDasharray={circ}
+        strokeDashoffset={circ - (circ * pct) / 100}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 150ms ease, stroke 150ms ease" }}
+      />
+    </svg>
+  );
+}
+
 export function SignToText() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,8 +63,6 @@ export function SignToText() {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // autoPlay handles playback — don't call .play() to avoid AbortError
-          // when React StrictMode double-invokes effects in development
         }
       } catch (e) {
         const msg = String(e);
@@ -62,7 +80,6 @@ export function SignToText() {
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
 
-    // FPS counter
     const now = performance.now();
     fpsRef.current.frames++;
     if (now - fpsRef.current.last >= 1000) {
@@ -74,11 +91,8 @@ export function SignToText() {
 
     const { landmarks } = detect(video);
 
-    // Draw skeleton on canvas overlay
     const canvas = canvasRef.current;
     if (canvas) {
-      // Size the canvas to the container (CSS display size), not video native res.
-      // drawSkeleton computes the object-cover crop internally using videoWidth/videoHeight.
       const cw = canvas.clientWidth;
       const ch = canvas.clientHeight;
       if (canvas.width !== cw) canvas.width = cw;
@@ -146,92 +160,83 @@ export function SignToText() {
   const confPct = Math.round(localConf * 100);
 
   return (
-    <div className="flex gap-4 p-4 h-full">
+    <div className="flex gap-6 p-6 h-full">
+
       {/* ── Webcam column ── */}
-      <div className="flex-1 flex flex-col gap-3 min-w-0">
+      <div className="flex-1 flex flex-col gap-4 min-w-0">
 
-        {/* Camera card — video is ALWAYS visible once cam is granted */}
-        <div className="relative rounded-3xl overflow-hidden bg-navy-900/40 backdrop-blur-xl border border-white/10 shadow-[0_0_40px_rgba(45,212,191,0.1)] flex-1 min-h-0 ring-1 ring-white/5">
+        {/* Camera card */}
+        <div className="relative rounded-2xl overflow-hidden bg-navy-900 border border-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_16px_48px_rgba(0,0,0,0.6)] flex-1 min-h-0">
 
-          {/* Camera blocked — full overlay only when we truly have no feed */}
           {camError ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 bg-navy-900">
-              <div className="w-12 h-12 rounded-2xl bg-red-900/60 border border-red-700/50 flex items-center justify-center">
-                <XIcon className="w-6 h-6 text-red-400" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 bg-navy-900">
+              <div className="w-12 h-12 rounded-2xl bg-red-900/40 border border-red-700/50 flex items-center justify-center">
+                <XIcon className="w-5 h-5 text-red-400" />
               </div>
-              <p className="text-sm text-red-300 text-center max-w-xs">{camError}</p>
+              <p className="text-sm text-red-300 text-center max-w-xs leading-relaxed">{camError}</p>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-1.5 rounded-xl bg-red-800/60 hover:bg-red-700/60 text-sm text-red-200 transition-colors cursor-pointer border border-red-700/40"
+                className="px-5 py-2 rounded-xl bg-red-800/40 hover:bg-red-700/40 text-sm text-red-200 transition-colors cursor-pointer border border-red-700/40"
               >
                 Reload &amp; retry
               </button>
             </div>
           ) : (
             <>
-              {/* Live video */}
               <video
                 ref={videoRef}
                 className="w-full h-full object-cover scale-x-[-1]"
-                autoPlay
-                muted
-                playsInline
+                autoPlay muted playsInline
               />
+              <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-              {/* Skeleton overlay */}
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full pointer-events-none"
-              />
-
-              {/* ── Top-left status chips ── */}
-              <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
-                <span className="bg-black/50 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-slate-300 font-mono border border-white/10">
+              {/* Top-left status chips */}
+              <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
+                <span className="bg-black/50 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-slate-400 font-mono border border-white/8">
                   {fps} fps
                 </span>
                 {mpReady ? (
-                  <span className="bg-teal-700/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
-                    Hand detection ✓
+                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">
+                    Hand ✓
                   </span>
                 ) : mpError ? (
-                  <span className="bg-red-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-red-300 border border-red-700/40 max-w-[200px] truncate" title={mpError}>
-                    MP error — check console
+                  <span className="bg-red-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-red-300 border border-red-700/30">
+                    MP error
                   </span>
                 ) : (
-                  <span className="bg-yellow-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-yellow-300 border border-yellow-700/40 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="bg-amber-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-amber-300 border border-amber-700/30 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                     {loadingMsg}
                   </span>
                 )}
                 {tfReady && (
-                  <span className="bg-teal-700/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-white border border-teal-500/40">
+                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">
                     TF.js ✓
                   </span>
                 )}
               </div>
 
-              {/* ── Detected letter badge ── */}
+              {/* Detected letter badge — bottom centre with confidence ring */}
               {localLetter && mpReady && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
-                  <div className="bg-navy-950/60 backdrop-blur-xl border border-teal-500/30 rounded-3xl px-8 py-4 flex flex-col items-center shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/10">
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
+                  <div className="bg-navy-950/75 backdrop-blur-xl border border-white/10 rounded-2xl px-5 py-3 flex items-center gap-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+                    {/* Big letter */}
                     <span
-                      className="text-7xl font-bold text-teal-400 leading-none"
-                      style={{ fontFamily: "'Fira Code', monospace" }}
-                    >
-                      style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 20px rgba(45,212,191,0.5)" }}
+                      className="text-6xl font-bold text-teal-400 leading-none"
+                      style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 24px rgba(45,212,191,0.55)" }}
                     >
                       {localLetter}
                     </span>
-                    <div className="w-32 h-1.5 bg-navy-900/80 rounded-full overflow-hidden mt-3 ring-1 ring-white/5">
-                      <div
-                        className={cn(
-                          "h-full rounded-full transition-all duration-150",
-                          localConf > 0.9 ? "bg-teal-400" : localConf > 0.75 ? "bg-yellow-400" : "bg-red-400",
-                        )}
-                        style={{ width: `${confPct}%` }}
-                      />
+                    {/* Confidence ring + label */}
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="relative">
+                        <ConfRing pct={confPct} />
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                          {confPct}%
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest">confidence</span>
                     </div>
-                    <span className="text-[10px] text-slate-400 mt-0.5">{confPct}% confidence</span>
                   </div>
                 </div>
               )}
@@ -242,11 +247,12 @@ export function SignToText() {
         {/* Autocomplete suggestions */}
         {suggestions.length > 0 && (
           <div className="flex gap-2 flex-wrap">
+            <span className="label-xs self-center mr-1">Suggestions</span>
             {suggestions.map((s) => (
               <button
                 key={s}
                 onClick={() => handleSuggestion(s)}
-                className="px-5 py-2 bg-navy-800/60 backdrop-blur-md hover:bg-teal-500/20 text-sm rounded-xl transition-all duration-300 border border-white/10 hover:border-teal-500/50 hover:shadow-[0_0_15px_rgba(45,212,191,0.2)] cursor-pointer font-medium text-slate-200 hover:text-teal-300"
+                className="px-4 py-1.5 bg-white/4 hover:bg-teal-500/15 text-sm rounded-xl transition-all duration-200 border border-white/8 hover:border-teal-500/40 cursor-pointer font-medium text-slate-200 hover:text-teal-300"
               >
                 {s}
               </button>
@@ -256,17 +262,19 @@ export function SignToText() {
       </div>
 
       {/* ── Output column ── */}
-      <div className="w-72 flex flex-col gap-3 shrink-0">
+      <div className="w-72 flex flex-col gap-4 shrink-0">
 
-        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5">
-          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-2 font-bold">Signing</p>
-          <p className="text-4xl font-bold text-white min-h-[3rem] leading-tight drop-shadow-md" style={{ fontFamily: "'Fira Code', monospace" }}>
-            {localWord || <span className="text-slate-500 font-normal text-xl">waiting…</span>}
+        {/* Signing / current word card */}
+        <div className="glass-card p-5">
+          <p className="label-xs mb-3">Current Sign</p>
+          <p className="text-4xl font-bold text-white min-h-[3rem] leading-tight drop-shadow-sm" style={{ fontFamily: "'Fira Code', monospace" }}>
+            {localWord || <span className="text-slate-600 font-normal text-xl">waiting…</span>}
           </p>
         </div>
 
-        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5 flex-1">
-          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-3 font-bold">Text</p>
+        {/* Translated text card */}
+        <div className="glass-card p-5 flex-1">
+          <p className="label-xs mb-3">Translated Text</p>
           <div className="text-[15px] text-white leading-relaxed break-words min-h-[5rem]">
             {localSentence && <span className="text-slate-300">{localSentence}</span>}
             {localWord && <span className="text-teal-400 font-semibold">{localWord}</span>}
@@ -274,34 +282,37 @@ export function SignToText() {
           </div>
         </div>
 
+        {/* Actions — primary + secondary grouping */}
         <div className="flex gap-2">
+          {/* PRIMARY — Speak */}
           <button
             onClick={handleSpeak}
             disabled={!fullText}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-bold text-sm transition-all duration-300 cursor-pointer shadow-[0_0_20px_rgba(45,212,191,0.3)] hover:shadow-[0_0_30px_rgba(45,212,191,0.5)] transform hover:-translate-y-0.5"
+            className="btn-primary flex-1"
           >
             <VolumeIcon className="w-4 h-4" /> Speak
           </button>
-          <button onClick={handleBackspace} title="Backspace"
-            className="w-12 flex items-center justify-center rounded-2xl bg-navy-800/60 backdrop-blur-md hover:bg-navy-700/80 transition-all duration-300 cursor-pointer border border-white/10 hover:border-white/20 shadow-lg transform hover:-translate-y-0.5 text-slate-300 hover:text-white">
-            <DeleteIcon className="w-5 h-5" />
+          {/* SECONDARY — Backspace */}
+          <button onClick={handleBackspace} title="Backspace" className="btn-ghost w-10 px-0">
+            <DeleteIcon className="w-4 h-4" />
           </button>
-          <button onClick={handleClear} title="Clear"
-            className="w-12 flex items-center justify-center rounded-2xl bg-navy-800/60 backdrop-blur-md hover:bg-red-500/20 transition-all duration-300 cursor-pointer border border-white/10 hover:border-red-500/50 shadow-lg transform hover:-translate-y-0.5 text-slate-300 hover:text-red-400">
-            <XIcon className="w-5 h-5" />
+          {/* SECONDARY — Clear */}
+          <button onClick={handleClear} title="Clear" className="btn-danger w-10 px-0">
+            <XIcon className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="bg-navy-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] ring-1 ring-white/5">
-          <p className="text-[10px] text-teal-500/70 uppercase tracking-widest mb-3 font-bold">Alphabet</p>
+        {/* Alphabet grid */}
+        <div className="glass-card p-4">
+          <p className="label-xs mb-3">Alphabet</p>
           <div className="grid grid-cols-6 gap-1.5">
             {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
               <button key={l}
                 className={cn(
-                  "aspect-square flex items-center justify-center text-xs font-mono rounded-xl transition-all duration-300 cursor-pointer border",
+                  "aspect-square flex items-center justify-center text-xs font-mono rounded-lg transition-all duration-200 cursor-pointer border",
                   localLetter === l
-                    ? "bg-teal-500 text-navy-950 font-bold border-teal-400 shadow-[0_0_15px_rgba(45,212,191,0.5)] transform scale-110 z-10"
-                    : "bg-navy-800/40 hover:bg-navy-700/60 text-slate-400 hover:text-slate-200 border-white/5 hover:border-white/20",
+                    ? "bg-teal-500 text-navy-950 font-bold border-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.6)] scale-110"
+                    : "bg-white/4 hover:bg-white/8 text-slate-400 hover:text-white border-white/6 hover:border-white/16",
                 )}
                 onClick={() => speak(l)}
               >

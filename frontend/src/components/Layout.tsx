@@ -26,21 +26,23 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-navy-950 text-white flex flex-col font-sans">
-      {/* Header */}
-      <header className="border-b border-navy-700/60 bg-navy-900/80 backdrop-blur-sm px-6 py-3 flex items-center gap-6 sticky top-0 z-20">
+
+      {/* ── Header ── */}
+      <header className="border-b border-white/6 bg-navy-950/90 backdrop-blur-xl px-6 py-0 flex items-stretch gap-6 sticky top-0 z-20 h-14 shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+
         {/* Brand */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-lg shadow-teal-900/40">
-            <HandIcon className="w-5 h-5 text-navy-950" />
+        <div className="flex items-center gap-3 shrink-0 py-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-[0_0_16px_rgba(45,212,191,0.5)]">
+            <HandIcon className="w-4 h-4 text-navy-950" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-white leading-tight tracking-tight">CamSL Translator</h1>
-            <p className="text-[10px] text-teal-400/70 uppercase tracking-widest">Cameroon Sign Language</p>
+            <h1 className="text-sm font-bold text-white leading-tight tracking-tight" style={{ fontFamily: "'Inter', sans-serif" }}>CamSL</h1>
+            <p className="text-[9px] text-teal-400/60 uppercase tracking-[0.15em] leading-none">Sign Language AI</p>
           </div>
         </div>
 
-        {/* Nav tabs */}
-        <nav className="flex gap-1 ml-auto items-center">
+        {/* Nav tabs — each tab has a bottom-border active indicator */}
+        <nav className="flex items-stretch gap-0.5 ml-4">
           {TABS.map(({ id, label, Icon }) => {
             const active = activeTab === id;
             return (
@@ -48,35 +50,42 @@ export function Layout({ children }: { children: ReactNode }) {
                 key={id}
                 onClick={() => setTab(id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer",
+                  "relative flex items-center gap-2 px-4 text-sm font-medium transition-all duration-200 cursor-pointer border-b-2",
                   active
-                    ? "bg-teal-500 text-navy-950 shadow-lg shadow-teal-900/40"
-                    : "text-slate-400 hover:text-white hover:bg-navy-700",
+                    ? "text-teal-400 border-teal-400"
+                    : "text-slate-500 border-transparent hover:text-slate-200 hover:border-white/20",
                 )}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
                 <span className="hidden md:inline">{label}</span>
+
+                {/* Active glow dot */}
+                {active && (
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.8)]" />
+                )}
               </button>
             );
           })}
-          {/* User + logout */}
-          <div className="ml-3 pl-3 border-l border-navy-700/60 flex items-center gap-2 shrink-0">
-            <span className="text-xs text-slate-400 hidden sm:inline font-mono">{username}</span>
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="w-8 h-8 flex items-center justify-center rounded-xl bg-navy-700 hover:bg-red-900/50 transition-colors cursor-pointer border border-navy-600"
-            >
-              <LogoutIcon className="w-4 h-4 text-slate-400 hover:text-red-400" />
-            </button>
-          </div>
         </nav>
+
+        {/* User + logout — pushed to the right */}
+        <div className="ml-auto flex items-center gap-3 pl-4 border-l border-white/6">
+          <div className="flex flex-col items-end hidden sm:flex">
+            <span className="text-xs font-semibold text-white leading-tight">{username}</span>
+            <span className="text-[9px] text-teal-400/50 uppercase tracking-widest">Member</span>
+          </div>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/4 hover:bg-red-500/15 transition-all duration-300 cursor-pointer border border-white/8 hover:border-red-500/40 group"
+          >
+            <LogoutIcon className="w-3.5 h-3.5 text-slate-500 group-hover:text-red-400 transition-colors" />
+          </button>
+        </div>
       </header>
 
       {/* Main */}
       <main className="flex-1 overflow-auto">{children}</main>
-
-
     </div>
   );
 }

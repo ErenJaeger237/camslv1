@@ -9,8 +9,8 @@ import { cn } from "../lib/utils";
 import { ChevronRightIcon } from "./icons";
 import { Hand3D } from "./Hand3D";
 
-const HOLD_FRAMES = 40;   // ~1.3 s at 30 fps — long enough to be deliberate
-const MAX_ATTEMPTS = 3;   // wrong answers before advancing to next letter
+const HOLD_FRAMES = 40;
+const MAX_ATTEMPTS = 3;
 
 export function PracticeMode() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -87,23 +87,19 @@ export function PracticeMode() {
         resetAttempt();
       }, 1400);
     } else if (shouldAdvance) {
-      // All attempts used — fetch tip then show review panel
       const newRecent = [...recentLetters.slice(-4), practiceTarget];
       setRecentLetters(newRecent);
       setTimeout(async () => {
         setFeedback(null);
         holdRef.current = [];
         setHoldProgress(0);
-        // Show loading state immediately
         setTipState({ text: "", signed: signedLetter, loading: true });
-        // Fetch tip (Gemini or static fallback)
         try {
           const { tip } = await getPracticeTip(practiceTarget, signedLetter);
           setTipState({ text: tip, signed: signedLetter, loading: false });
         } catch {
           setTipState({ text: `Check a reference for '${practiceTarget}' and compare your hand shape carefully.`, signed: signedLetter, loading: false });
         }
-        // Auto-advance countdown (10 s)
         let remaining = 10;
         setTipCountdown(remaining);
         const advance = () => doAdvance(newRecent);
@@ -115,7 +111,6 @@ export function PracticeMode() {
         }, 1000);
       }, 1400);
     } else {
-      // Still have attempts left — reset and retry same letter
       setAttempts(nextAttempts);
       setTimeout(resetAttempt, 1600);
     }
@@ -127,7 +122,6 @@ export function PracticeMode() {
     if (!video || video.readyState < 2 || !mpReady || !practiceTarget || feedback) return;
     const { landmarks } = detect(video);
 
-    // Draw skeleton
     const canvas = canvasRef.current;
     if (canvas) {
       const cw = canvas.clientWidth;
@@ -149,7 +143,6 @@ export function PracticeMode() {
     setDetected(pred.letter);
     holdRef.current.push(pred.letter);
     if (holdRef.current.length > HOLD_FRAMES) holdRef.current.shift();
-    // Reset progress if the predicted letter changes mid-hold
     const allSame = holdRef.current.every((l) => l === pred.letter);
     const stableFrames = allSame ? holdRef.current.length : 0;
     if (!allSame) holdRef.current = [pred.letter];
@@ -161,62 +154,171 @@ export function PracticeMode() {
 
   useEffect(() => { rafRef.current = requestAnimationFrame(loop); return () => cancelAnimationFrame(rafRef.current); }, [loop]);
 
-  return (
-    <div className="relative flex gap-4 p-4 h-full">
-      {/* Webcam */}
-      <div className="flex-1 relative rounded-2xl overflow-hidden bg-navy-800 border border-navy-700/60 shadow-xl">
-        <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+  // Status colour helper
+  const statusColor = feedback === "correct"
+    ? "text-emerald-400 bg-emerald-500/15 border-emerald-500/30"
+    : feedback === "wrong"
+      ? "text-red-400 bg-red-500/15 border-red-500/30"
+      : holdProgress > 50
+        ? "text-amber-400 bg-amber-500/15 border-amber-500/30"
+        : "text-slate-400 bg-white/4 border-white/8";
 
-        {feedback && (
-          <div className={cn(
-            "absolute inset-0 flex items-center justify-center transition-all",
-            feedback === "correct" ? "bg-teal-500/70" : "bg-red-600/70"
-          )}>
-            <span className="text-7xl font-bold text-white drop-shadow-lg">
-              {feedback === "correct" ? "✓" : "✗"}
+  const statusText = feedback === "correct"
+    ? "✓ Correct!"
+    : feedback === "wrong"
+      ? "✗ Try again"
+      : holdProgress > 0
+        ? "Hold steady…"
+        : "Waiting for sign";
+
+  return (
+    <div className="relative flex gap-6 p-6 h-full">
+
+      {/* ── Left: camera ── */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0">
+
+        {/* Target letter banner — MASSIVE and central above camera */}
+        <div className="glass-card px-6 py-4 flex items-center justify-between">
+          <div>
+            <p className="label-xs mb-1">Sign to practice</p>
+            <span
+              className="text-8xl font-black text-white leading-none"
+              style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 40px rgba(45,212,191,0.5)" }}
+            >
+              {practiceTarget || "…"}
             </span>
           </div>
-        )}
 
-        {detected && !feedback && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-            <div className="bg-navy-900/80 backdrop-blur-sm border border-teal-500/30 rounded-2xl px-6 py-2">
-              <span className="text-5xl font-bold text-teal-400" style={{ fontFamily: "'Fira Code', monospace" }}>
-                {detected}
+          {/* Status badge — colour coded */}
+          <div className={cn("flex flex-col items-center gap-2 px-4 py-3 rounded-2xl border transition-all duration-500", statusColor)}>
+            <span className="text-sm font-bold">{statusText}</span>
+            {/* Mastery */}
+            <div className="w-24">
+              <div className="flex justify-between text-[9px] text-slate-500 mb-1">
+                <span>Mastery</span>
+                <span className="text-teal-400 font-bold">{practiceMastery}%</span>
+              </div>
+              <div className="h-1.5 bg-navy-900/60 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                  style={{ width: `${practiceMastery}%` }}
+                />
+              </div>
+            </div>
+            {/* Skip */}
+            <button
+              onClick={() => { setAttempts(MAX_ATTEMPTS - 1); handleResult(false, detected || "?"); }}
+              disabled={!practiceTarget || !!feedback}
+              className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-lg bg-white/6 hover:bg-white/10 border border-white/8 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              Skip <ChevronRightIcon className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Camera feed */}
+        <div className="relative flex-1 rounded-2xl overflow-hidden bg-navy-900 border border-white/8 shadow-[0_16px_48px_rgba(0,0,0,0.5)] min-h-0">
+          <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+          {/* Feedback overlay */}
+          {feedback && (
+            <div className={cn(
+              "absolute inset-0 flex flex-col items-center justify-center transition-all gap-3",
+              feedback === "correct" ? "bg-emerald-500/50" : "bg-red-600/50"
+            )}>
+              <span className="text-8xl font-black text-white drop-shadow-lg" style={{ textShadow: "0 0 40px rgba(255,255,255,0.6)" }}>
+                {feedback === "correct" ? "✓" : "✗"}
+              </span>
+              <span className="text-xl font-bold text-white/90 uppercase tracking-widest">
+                {feedback === "correct" ? "Correct!" : "Wrong"}
               </span>
             </div>
-          </div>
-        )}
+          )}
 
-        {!mpReady && !camError && (
-          <div className="absolute top-3 left-3">
-            <span className="bg-yellow-900/80 backdrop-blur-sm text-[11px] px-2.5 py-1 rounded-lg text-yellow-300 border border-yellow-700/40 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-              {loadingMsg}
-            </span>
-          </div>
-        )}
+          {/* Detected letter chip */}
+          {detected && !feedback && (
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
+              <div className="bg-navy-950/75 backdrop-blur-xl border border-white/10 rounded-2xl px-5 py-2 shadow-lg">
+                <span className="text-5xl font-bold text-teal-400" style={{ fontFamily: "'Fira Code', monospace" }}>
+                  {detected}
+                </span>
+              </div>
+            </div>
+          )}
 
-        {camError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-navy-900/90">
-            <p className="text-sm text-red-400 text-center px-6">{camError}</p>
+          {/* Loading chip */}
+          {!mpReady && !camError && (
+            <div className="absolute top-4 left-4">
+              <span className="bg-amber-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-amber-300 border border-amber-700/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                {loadingMsg}
+              </span>
+            </div>
+          )}
+
+          {camError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-navy-900/90">
+              <p className="text-sm text-red-400 text-center px-6">{camError}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Hold-progress bar */}
+        <div className="glass-card px-5 py-3 flex items-center gap-4">
+          <div className="flex-1">
+            <div className="flex justify-between text-[10px] text-slate-500 mb-1.5">
+              <span className="font-semibold">Hold steady</span>
+              <span className="font-mono">{holdProgress}%</span>
+            </div>
+            <div className="h-2 bg-navy-900/60 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-75"
+                style={{
+                  width: `${holdProgress}%`,
+                  background: holdProgress === 100 ? "#22c55e" : "linear-gradient(90deg, #3ddbd9, #2dd4bf)",
+                }}
+              />
+            </div>
           </div>
-        )}
+          {/* Attempt dots */}
+          {attempts > 0 && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                <span
+                  key={i}
+                  className="w-2.5 h-2.5 rounded-full transition-colors duration-300"
+                  style={{ background: i < attempts ? "#ef4444" : "rgba(255,255,255,0.08)" }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Tip overlay — shown after all attempts are exhausted */}
+      {/* ── Right: 3D reference ── */}
+      {practiceTarget && (
+        <div className="w-64 flex flex-col gap-4 shrink-0">
+          <div className="glass-card overflow-hidden flex flex-col flex-1 min-h-0">
+            <p className="label-xs px-4 pt-4 pb-0 shrink-0">3D Reference</p>
+            <div className="flex-1 min-h-0">
+              <Hand3D letter={practiceTarget} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tip overlay ── */}
       {tipState && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-navy-950/90 backdrop-blur-sm rounded-2xl">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-navy-950/90 backdrop-blur-sm rounded-2xl p-6">
           <div
-            className="w-full max-w-sm mx-6 rounded-2xl border p-6 flex flex-col gap-4"
+            className="w-full max-w-sm rounded-2xl border p-6 flex flex-col gap-4"
             style={{
               background: "linear-gradient(160deg, #0d1b2a 0%, #112235 100%)",
               borderColor: "rgba(239,68,68,0.3)",
               boxShadow: "0 0 40px rgba(239,68,68,0.15), 0 20px 60px rgba(0,0,0,0.5)",
             }}
           >
-            {/* Header */}
             <div className="flex items-center gap-3">
               <span className="text-2xl">🔍</span>
               <div>
@@ -225,20 +327,18 @@ export function PracticeMode() {
               </div>
             </div>
 
-            {/* What was signed vs target */}
             <div className="flex gap-3">
               <div className="flex-1 rounded-xl bg-red-950/40 border border-red-800/40 p-3 text-center">
-                <p className="text-[10px] text-red-400 uppercase tracking-widest mb-1">You signed</p>
+                <p className="label-xs text-red-400 mb-1">You signed</p>
                 <p className="text-3xl font-bold text-red-300 font-mono">{tipState.signed}</p>
               </div>
               <div className="flex items-center text-slate-600 text-lg">→</div>
               <div className="flex-1 rounded-xl bg-teal-950/40 border border-teal-700/40 p-3 text-center">
-                <p className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">Target</p>
+                <p className="label-xs text-teal-400 mb-1">Target</p>
                 <p className="text-3xl font-bold text-teal-300 font-mono">{practiceTarget}</p>
               </div>
             </div>
 
-            {/* Tip text */}
             <div className="rounded-xl bg-navy-800/60 border border-navy-700/60 p-4">
               {tipState.loading ? (
                 <div className="flex items-center gap-2 text-slate-400 text-sm">
@@ -250,15 +350,13 @@ export function PracticeMode() {
               )}
             </div>
 
-            {/* Actions */}
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-slate-600 font-mono">
                 Auto-advancing in {tipCountdown}s
               </span>
               <button
                 onClick={() => { advanceRef.current?.(); }}
-                className="px-5 py-2 rounded-xl text-sm font-bold text-navy-950 cursor-pointer"
-                style={{ background: "linear-gradient(135deg, #3ddbd9, #1ea8a6)" }}
+                className="btn-primary px-5 py-2 text-sm"
               >
                 Got it, next →
               </button>
@@ -266,88 +364,6 @@ export function PracticeMode() {
           </div>
         </div>
       )}
-
-      {/* Controls */}
-      <div className="w-64 flex flex-col gap-2 shrink-0">
-
-        {/* Compact header: letter + mastery + skip in one strip */}
-        <div className="bg-navy-800 rounded-2xl px-4 py-3 border border-navy-700/60 shadow-lg shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Big letter badge */}
-            <span
-              className="text-6xl font-bold text-white leading-none w-14 text-center"
-              style={{ fontFamily: "'Fira Code', monospace" }}
-            >
-              {practiceTarget || "…"}
-            </span>
-
-            {/* Mastery + skip */}
-            <div className="flex-1 flex flex-col gap-2">
-              <div className="flex justify-between text-[10px] text-slate-400">
-                <span>Mastery</span>
-                <span className="text-teal-400 font-bold">{practiceMastery}%</span>
-              </div>
-              <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-teal-500 rounded-full transition-all duration-500"
-                  style={{ width: `${practiceMastery}%` }}
-                />
-              </div>
-              <button
-                onClick={() => { setAttempts(MAX_ATTEMPTS - 1); handleResult(false, detected || "?"); }}
-                disabled={!practiceTarget || !!feedback}
-                className="flex items-center justify-center gap-1 py-1 rounded-lg bg-navy-700 hover:bg-navy-600 text-xs transition-colors cursor-pointer disabled:opacity-40 border border-navy-600"
-              >
-                Skip <ChevronRightIcon className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-          {/* Hold progress bar */}
-          <div className="mt-3">
-            <div className="flex justify-between text-[10px] text-slate-500 mb-1">
-              <span>Hold steady</span>
-              <span className="font-mono">{holdProgress}%</span>
-            </div>
-            <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-75"
-                style={{
-                  width: `${holdProgress}%`,
-                  background: holdProgress === 100 ? "#22c55e" : "#3ddbd9",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Attempt dots */}
-          {attempts > 0 && (
-            <div className="mt-2 flex items-center justify-center gap-1.5">
-              {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
-                <span
-                  key={i}
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: i < attempts ? "#ef4444" : "#162d44" }}
-                />
-              ))}
-              <span className="text-[10px] text-slate-500 ml-1">
-                {MAX_ATTEMPTS - attempts} attempt{MAX_ATTEMPTS - attempts !== 1 ? "s" : ""} left
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 3D hand reference — takes all remaining height */}
-        {practiceTarget && (
-          <div className="bg-navy-900 rounded-2xl border border-navy-700/60 flex flex-col shadow overflow-hidden flex-1 min-h-0">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold px-3 pt-2 pb-0 shrink-0">
-              3D Reference
-            </p>
-            <div className="flex-1 min-h-0">
-              <Hand3D letter={practiceTarget} />
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
