@@ -1,7 +1,8 @@
-import { useRef, useState, useCallback } from "react";
+import { lazy, Suspense, useRef, useState, useCallback } from "react";
 import { speak } from "../lib/tts";
 import { VolumeIcon } from "./icons";
-import { Hand3D } from "./Hand3D";
+
+const Hand3D = lazy(() => import("./Hand3D").then((m) => ({ default: m.Hand3D })));
 
 const KNOWN_LETTERS = new Set("ABCDEFGHIKLMNOPQRSTUVWXY".split(""));
 const DELAY_MS = 900;
@@ -94,7 +95,14 @@ export function TextToSign() {
 
       {/* ── 3D sign display ── */}
       <div className="flex-1 relative bg-navy-900 rounded-2xl border border-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_16px_48px_rgba(0,0,0,0.5)] overflow-hidden">
-        <Hand3D letter={currentChar} />
+        <Suspense fallback={
+          <div className="w-full h-full flex items-center justify-center gap-2 text-xs text-slate-500">
+            <span className="w-4 h-4 rounded-full border-2 border-teal-500/40 border-t-teal-400 animate-spin" />
+            Loading 3D…
+          </div>
+        }>
+          <Hand3D letter={currentChar} />
+        </Suspense>
 
         {/* Current letter badge — bottom centre */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useMediaPipe } from "../hooks/useMediaPipe";
 import { useInference } from "../hooks/useInference";
 import { normaliseLandmarks } from "../lib/landmarks";
@@ -7,7 +7,10 @@ import { initPractice, recordPracticeResult, getPracticeTip } from "../lib/api";
 import { useAppStore } from "../store/appStore";
 import { cn } from "../lib/utils";
 import { ChevronRightIcon } from "./icons";
-import { Hand3D } from "./Hand3D";
+
+// Lazy-load Hand3D so Three.js is split into its own chunk and doesn't
+// block the main bundle parse — Practice tab shows a spinner while it loads.
+const Hand3D = lazy(() => import("./Hand3D").then((m) => ({ default: m.Hand3D })));
 
 const HOLD_FRAMES = 40;
 const MAX_ATTEMPTS = 3;
@@ -299,7 +302,14 @@ export function PracticeMode() {
             <div className="glass-card overflow-hidden flex flex-col flex-1 min-h-0 relative">
               <p className="label-xs px-4 pt-4 pb-0 shrink-0">3D Reference</p>
               <div className="flex-1 min-h-0 relative">
-                <Hand3D letter={practiceTarget} />
+                <Suspense fallback={
+                  <div className="w-full h-full flex items-center justify-center gap-2 text-xs text-slate-500">
+                    <span className="w-4 h-4 rounded-full border-2 border-teal-500/40 border-t-teal-400 animate-spin" />
+                    Loading 3D…
+                  </div>
+                }>
+                  <Hand3D letter={practiceTarget} />
+                </Suspense>
               </div>
             </div>
           </div>

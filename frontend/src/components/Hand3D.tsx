@@ -1,19 +1,13 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer }  from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass }      from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { OutputPass }      from "three/examples/jsm/postprocessing/OutputPass.js";
 import { getLandmarks, HAND_CONNECTIONS } from "../lib/handPoses";
 
-// ── Wireframe cage (thin crisp edges) ─────────────────────────────────────────
+// ── Wireframe cage ────────────────────────────────────────────────────────────
 const JOINT_R = 0.030;
 const TIP_R   = 0.038;
 const BONE_R  = 0.018;
 
-// ── Skin tubes (solid geometry, significantly fatter than the cage) ────────────
-// Wide enough that adjacent tubes along each finger overlap and merge into
-// a continuous finger shape rather than separated sausage links.
+// ── Skin tubes ────────────────────────────────────────────────────────────────
 const SKIN_JOINT_R = 0.105;
 const SKIN_TIP_R   = 0.115;
 const SKIN_BONE_R  = 0.098;
@@ -30,11 +24,9 @@ const _mid = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _up  = new THREE.Vector3(0, 1, 0);
 
-// Wireframe geometries (EdgesGeometry = just the structural edge lines)
+// Shared geometries (created once, reused across all instances)
 const JOINT_EDGE_GEO = new THREE.EdgesGeometry(new THREE.SphereGeometry(1, 10, 7));
 const BONE_EDGE_GEO  = new THREE.EdgesGeometry(new THREE.CylinderGeometry(1, 1, 1, 8));
-
-// Skin geometries (solid closed meshes — these produce the visible surface)
 const SKIN_JOINT_GEO = new THREE.SphereGeometry(1, 14, 10);
 const SKIN_BONE_GEO  = new THREE.CylinderGeometry(1, 1, 1, 10);
 
@@ -66,7 +58,6 @@ function updateMeshes(
     bones[bi].scale.set(BONE_R, len, BONE_R);
     bones[bi].quaternion.setFromUnitVectors(_up, _dir);
 
-    // Skin tube is fatter but shares the same orientation
     skinBones[bi].position.copy(_mid);
     skinBones[bi].scale.set(SKIN_BONE_R, len, SKIN_BONE_R);
     skinBones[bi].quaternion.copy(bones[bi].quaternion);
@@ -79,8 +70,7 @@ export function Hand3D({ letter }: { letter: string }) {
 
   const stateRef = useRef<{
     renderer:   THREE.WebGLRenderer;
-    composer:   EffectComposer;
-    bloom:      UnrealBloomPass;
+    scene:      THREE.Scene;
     camera:     THREE.PerspectiveCamera;
     group:      THREE.Group;
     joints:     THREE.LineSegments[];
@@ -101,13 +91,11 @@ export function Hand3D({ letter }: { letter: string }) {
     const w = el.clientWidth  || 300;
     const h = el.clientHeight || 300;
 
-    // ── Renderer ───────────────────────────────────────────────────────────
+    // ── Renderer — no post-processing, plain render() ─────────────────────
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     renderer.setClearColor(BG, 1);
-    renderer.toneMapping         = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
     el.appendChild(renderer.domElement);
 
     const scene  = new THREE.Scene();
@@ -115,11 +103,6 @@ export function Hand3D({ letter }: { letter: string }) {
     camera.position.set(0.4, 1.2, 2.8);
     camera.lookAt(0, 0.9, 0);
 
-    // ── Skin material (Method 1) ───────────────────────────────────────────
-    // NormalBlending = real surface compositing (src*alpha + dst*(1-alpha)).
-    // depthTest:false so all tube layers accumulate — denser regions of the
-    // hand (palm, knuckles) become naturally more opaque as layers stack.
-    // DoubleSide so the inside of each tube also contributes.
     const skinMat = new THREE.MeshBasicMaterial({
       color:       CYAN,
       transparent: true,
@@ -129,7 +112,6 @@ export function Hand3D({ letter }: { letter: string }) {
       depthTest:   false,
     });
 
-    // ── Wireframe material ─────────────────────────────────────────────────
     const wireMat = new THREE.LineBasicMaterial({
       color:       CYAN,
       transparent: true,
@@ -146,12 +128,10 @@ export function Hand3D({ letter }: { letter: string }) {
       depthWrite:  false,
     });
 
-    // ── Hand group ─────────────────────────────────────────────────────────
     const group = new THREE.Group();
     group.position.set(0, -0.3, 0);
     scene.add(group);
 
-    // Skin tubes — renderOrder 0, drawn first so wireframe sits on top
     const skinJoints: THREE.Mesh[] = [];
     for (let i = 0; i < 21; i++) {
       const r    = TIP_IDS.has(i) ? SKIN_TIP_R : SKIN_JOINT_R;
@@ -170,7 +150,6 @@ export function Hand3D({ letter }: { letter: string }) {
       skinBones.push(mesh);
     }
 
-    // Wireframe cage — renderOrder 1, sits on top of the skin
     const joints: THREE.LineSegments[] = [];
     for (let i = 0; i < 21; i++) {
       const r    = TIP_IDS.has(i) ? TIP_R : JOINT_R;
@@ -189,7 +168,6 @@ export function Hand3D({ letter }: { letter: string }) {
       bones.push(mesh);
     }
 
-    // Projector rings
     const rings: THREE.LineLoop[] = [];
     for (const r of [0.28, 0.40]) {
       const pts = Array.from({ length: 64 }, (_, i) => {
@@ -205,19 +183,11 @@ export function Hand3D({ letter }: { letter: string }) {
       rings.push(loop);
     }
 
-    // ── Post-processing ────────────────────────────────────────────────────
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.25, 0.22);
-    composer.addPass(bloom);
-    composer.addPass(new OutputPass());
-
-    // ── Initial pose ───────────────────────────────────────────────────────
     const initLms = getLandmarks(letter || "A");
     updateMeshes(initLms, joints, bones, skinJoints, skinBones);
 
     stateRef.current = {
-      renderer, composer, bloom, camera, group,
+      renderer, scene, camera, group,
       joints, bones, skinJoints, skinBones,
       ringMat, rings,
       currentLms: [...initLms],
@@ -226,7 +196,6 @@ export function Hand3D({ letter }: { letter: string }) {
       lerpFrom:   [...initLms],
     };
 
-    // ── RAF loop ───────────────────────────────────────────────────────────
     const tick = (now: number) => {
       rafRef.current = requestAnimationFrame(tick);
       const s = stateRef.current!;
@@ -245,17 +214,15 @@ export function Hand3D({ letter }: { letter: string }) {
         updateMeshes(s.currentLms, s.joints, s.bones, s.skinJoints, s.skinBones);
       }
 
-      composer.render();
+      // Plain render — no bloom post-processing (avoids shader compilation on mount)
+      renderer.render(scene, camera);
     };
     rafRef.current = requestAnimationFrame(tick);
 
-    // ── Resize ─────────────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {
       const nw = el.clientWidth, nh = el.clientHeight;
       if (!nw || !nh) return;
       renderer.setSize(nw, nh);
-      composer.setSize(nw, nh);
-      bloom.resolution.set(nw, nh);
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
     });
@@ -282,7 +249,7 @@ export function Hand3D({ letter }: { letter: string }) {
   return (
     <div
       ref={mountRef}
-      style={{ width: "100%", height: "100%" }}
+      style={{ width: "100%", height: "100%", filter: "drop-shadow(0 0 8px rgba(0,243,255,0.45))" }}
       className="rounded-xl overflow-hidden"
     />
   );
