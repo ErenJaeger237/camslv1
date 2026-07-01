@@ -10,10 +10,16 @@ class Credentials(BaseModel):
     password: str
 
 
+class RegisterBody(BaseModel):
+    username: str
+    password: str
+    email: str = ""
+
+
 @router.post("/auth/register")
-def register(body: Credentials):
+def register(body: RegisterBody):
     try:
-        result = db_users.register(body.username.strip(), body.password)
+        result = db_users.register(body.username.strip(), body.password, body.email)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

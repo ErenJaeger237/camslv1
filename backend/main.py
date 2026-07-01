@@ -20,7 +20,7 @@ except ImportError:
     pass
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import auth, chat, practice, autocomplete, contributions, retrain, clips, signs
+from .routes import auth, chat, practice, autocomplete, contributions, retrain, clips, signs, password_reset
 from . import db_users
 
 app = FastAPI(title="CamSL API", version="2.0.0")
@@ -44,6 +44,7 @@ app.include_router(contributions.router, prefix="/api")
 app.include_router(retrain.router, prefix="/api")
 app.include_router(clips.router, prefix="/api")
 app.include_router(signs.router, prefix="/api")
+app.include_router(password_reset.router, prefix="/api")
 
 
 @app.get("/health")

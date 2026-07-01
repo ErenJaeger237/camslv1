@@ -25,8 +25,13 @@ def init() -> None:
                     id       TEXT PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     pw_hash  TEXT NOT NULL,
+                    email    TEXT,
                     created  REAL NOT NULL
                 )
+            """)
+            # Safe migration: add email column if the table already existed without it
+            cur.execute("""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -34,6 +39,13 @@ def init() -> None:
                     user_id  TEXT NOT NULL,
                     username TEXT NOT NULL,
                     created  REAL NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    token    TEXT PRIMARY KEY,
+                    user_id  TEXT NOT NULL,
+                    expires  REAL NOT NULL
                 )
             """)
     finally:
@@ -45,7 +57,7 @@ def _hash(password: str, salt: str) -> str:
     return key.hex()
 
 
-def register(username: str, password: str) -> dict:
+def register(username: str, password: str, email: str = "") -> dict:
     if len(username) < 2 or len(username) > 32:
         raise ValueError("Username must be 2-32 characters.")
     if not re.match(r"^[a-zA-Z0-9_]+$", username):
@@ -55,7 +67,10 @@ def register(username: str, password: str) -> dict:
     if len(password) > 100:
         raise ValueError("Password must be less than 100 characters.")
 
-    # Normalise to lowercase so "Jordan" and "jordan" are treated as the same account
+    email = email.strip().lower()
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise ValueError("Invalid email address.")
+
     username = username.lower()
 
     salt = secrets.token_hex(16)
@@ -66,8 +81,8 @@ def register(username: str, password: str) -> dict:
     try:
         with con.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (id, username, pw_hash, created) VALUES (%s,%s,%s,%s)",
-                (user_id, username, pw_hash, time.time()),
+                "INSERT INTO users (id, username, pw_hash, email, created) VALUES (%s,%s,%s,%s,%s)",
+                (user_id, username, pw_hash, email or None, time.time()),
             )
     except psycopg2.IntegrityError:
         raise ValueError("Username already taken.")
@@ -78,7 +93,6 @@ def register(username: str, password: str) -> dict:
 
 
 def login(username: str, password: str) -> dict:
-    # Case-insensitive lookup so "Jordan" finds the stored "jordan" row
     con = _conn()
     try:
         with con.cursor() as cur:
@@ -87,7 +101,7 @@ def login(username: str, password: str) -> dict:
                 (username,),
             )
             row = cur.fetchone()
-            row = dict(row) if row else None  # materialise before connection closes
+            row = dict(row) if row else None
     finally:
         con.close()
 
@@ -130,7 +144,7 @@ def verify_token(token: str) -> dict | None:
                 (token,),
             )
             row = cur.fetchone()
-            row = dict(row) if row else None  # materialise before connection closes
+            row = dict(row) if row else None
     finally:
         con.close()
 
@@ -138,7 +152,6 @@ def verify_token(token: str) -> dict | None:
         return None
 
     if time.time() - row["created"] > 30 * 24 * 60 * 60:
-        # Expired — clean up asynchronously
         _delete_session(token)
         return None
 
@@ -150,5 +163,63 @@ def _delete_session(token: str) -> None:
     try:
         with con.cursor() as cur:
             cur.execute("DELETE FROM sessions WHERE token=%s", (token,))
+    finally:
+        con.close()
+
+
+def create_reset_token(email: str) -> str | None:
+    """Generate a 1-hour password reset token for the given email.
+    Returns the token, or None if no account with that email exists.
+    Callers should not reveal to the client which outcome occurred."""
+    email = email.strip().lower()
+    con = _conn()
+    try:
+        with con.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE LOWER(email)=%s", (email,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            user_id = row["id"]
+            token = secrets.token_urlsafe(32)
+            expires = time.time() + 3600
+            # One token per user at a time
+            cur.execute("DELETE FROM password_resets WHERE user_id=%s", (user_id,))
+            cur.execute(
+                "INSERT INTO password_resets (token, user_id, expires) VALUES (%s,%s,%s)",
+                (token, user_id, expires),
+            )
+            return token
+    finally:
+        con.close()
+
+
+def consume_reset_token(token: str, new_password: str) -> str:
+    """Verify token, update password, invalidate token. Returns username on success."""
+    if len(new_password) < 6:
+        raise ValueError("Password must be at least 6 characters.")
+    if len(new_password) > 100:
+        raise ValueError("Password must be less than 100 characters.")
+    con = _conn()
+    try:
+        with con.cursor() as cur:
+            cur.execute(
+                "SELECT user_id, expires FROM password_resets WHERE token=%s",
+                (token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invalid or expired reset link.")
+            if time.time() > row["expires"]:
+                cur.execute("DELETE FROM password_resets WHERE token=%s", (token,))
+                raise ValueError("Reset link has expired. Please request a new one.")
+            user_id = row["user_id"]
+            salt = secrets.token_hex(16)
+            pw_hash = f"{salt}:{_hash(new_password, salt)}"
+            cur.execute("UPDATE users SET pw_hash=%s WHERE id=%s", (pw_hash, user_id))
+            # Invalidate all reset tokens and sessions for this user
+            cur.execute("DELETE FROM password_resets WHERE user_id=%s", (user_id,))
+            cur.execute("DELETE FROM sessions WHERE user_id=%s", (user_id,))
+            cur.execute("SELECT username FROM users WHERE id=%s", (user_id,))
+            return cur.fetchone()["username"]
     finally:
         con.close()
