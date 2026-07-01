@@ -1048,6 +1048,144 @@
     }
     .db-tally-pill.has { color: var(--green); border-color: rgba(34,197,94,.3); }
 
+    /* Tab bar for dataset builder */
+    .db-tab-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 2px;
+    }
+    .db-tab {
+      padding: 6px 16px;
+      border-radius: 6px 6px 0 0;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all .2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .db-tab:hover { color: var(--text); background: var(--surface); }
+    .db-tab.active {
+      color: var(--accent);
+      background: rgba(59,130,246,.1);
+      border-color: var(--accent);
+    }
+
+    /* Clip recording pane */
+    .db-pane { grid-column: 1 / -1; display: contents; }
+
+    .clip-form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+    .clip-field label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 5px;
+    }
+    .clip-field input,
+    .clip-field select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 7px 10px;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .clip-field input:focus,
+    .clip-field select:focus { border-color: var(--accent); }
+    .clip-field select option { background: var(--card); }
+
+    .clip-record-btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      border: none;
+      cursor: pointer;
+      transition: all .2s;
+      background: var(--accent);
+      color: #fff;
+    }
+    .clip-record-btn:hover:not(:disabled) { background: #2563eb; transform: translateY(-1px); }
+    .clip-record-btn.recording { background: #dc2626; animation: pulse-rec 1s ease-in-out infinite; }
+    .clip-record-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    @keyframes pulse-rec {
+      0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.5); }
+      50%      { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
+    }
+
+    .clip-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .clip-status-badge.idle     { background: var(--surface); color: var(--text-dim); }
+    .clip-status-badge.uploading{ background: rgba(245,158,11,.1); color: #f59e0b; }
+    .clip-status-badge.success  { background: rgba(34,197,94,.1);  color: var(--green); }
+    .clip-status-badge.error    { background: rgba(239,68,68,.1);  color: #ef4444; }
+    .clip-status-badge.recording{ background: rgba(220,38,38,.1);  color: #dc2626; }
+
+    .clip-stats-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .clip-stats-table th {
+      text-align: left;
+      padding: 5px 8px;
+      color: var(--text-dim);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      border-bottom: 1px solid var(--border);
+    }
+    .clip-stats-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .clip-stats-table tr:last-child td { border-bottom: none; }
+    .clip-stat-num { font-weight: 700; color: var(--accent); }
+    .clip-stat-remote { color: var(--green); }
+
+    .sb-status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .sb-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border2);
+      flex-shrink: 0;
+    }
+    .sb-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
     @keyframes save-flash {
       0%   { box-shadow: 0 0 0 0 rgba(34,197,94,.6); }
       100% { box-shadow: 0 0 20px 8px rgba(34,197,94,0); }
@@ -1613,92 +1751,230 @@
     <div class="screen" id="screen-dataset">
       <div class="db-layout" style="flex:1; min-height:0;">
 
-        <div class="db-banner">
+        <div class="db-banner" style="margin-bottom:0;">
           <div class="db-banner-title" style="display:flex;align-items:center;"><i data-lucide="database" style="margin-right:8px;"></i> Dataset Builder</div>
-          <div class="db-banner-sub">Select a target letter, hold the sign clearly in frame, then press <strong>Save Sample</strong>. Your contributions help build the first open CamSL dataset and can trigger model retraining.</div>
+          <div class="db-banner-sub">Contribute hand samples to improve the model, or record video clips with sign meanings for the community CamSL dataset.</div>
         </div>
 
-        <!-- Letter picker -->
-        <div class="db-card">
-          <div class="sec-label">SELECT TARGET LETTER</div>
-          <div class="letter-grid" id="letterGrid"><!-- built by JS --></div>
-
-          <!-- Live cam for dataset -->
-          <div style="position:relative; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:#000;">
-            <img id="videoFeedDataset" style="width:100%; aspect-ratio:4/3; object-fit:cover; display:block;" alt="">
-          </div>
-        </div>
-
-        <!-- Detect + save -->
-        <div class="db-card" style="justify-content:space-between;">
-          <div class="sec-label">LIVE DETECTION</div>
-
-          <div class="db-target-row">
-            <div class="db-target-block">
-              <div class="db-small-lbl">Target</div>
-              <div class="db-big-letter" id="dbTargetLetter">A</div>
-            </div>
-            <div class="db-vs">vs</div>
-            <div class="db-target-block">
-              <div class="db-small-lbl">Detected</div>
-              <div class="db-big-letter detected" id="dbDetected">—</div>
-            </div>
-          </div>
-
-          <div class="db-match" id="dbMatch">Select a letter to begin</div>
-
-          <button class="db-save-btn" id="dbSaveBtn" onclick="doSave()">SAVE SAMPLE</button>
-
-          <button class="btn btn-ghost" id="dbDeleteBtn" onclick="doDeleteLast()"
-                  style="width:100%; font-size:12px; height:32px;">
-            Delete Last Sample
+        <!-- Tab bar -->
+        <div class="db-tab-bar">
+          <button class="db-tab active" id="dbTab-letters" onclick="switchDbTab('letters')">
+            <i data-lucide="grid-3x3" style="width:13px;height:13px;"></i> Letter Samples
           </button>
-
-          <div style="text-align:center; font-size:12px; color:var(--text-dim);">
-            Session total: <strong id="dbSessionTotal">0</strong> samples
-          </div>
+          <button class="db-tab" id="dbTab-clips" onclick="switchDbTab('clips')">
+            <i data-lucide="video" style="width:13px;height:13px;"></i> Video Clips
+          </button>
         </div>
 
-        <!-- Retrain block -->
-        <div class="db-card db-retrain-card">
-          <div class="sec-label">MODEL RETRAINING &amp; SYSTEM STATUS</div>
+        <!-- ══ PANE: LETTER SAMPLES (existing) ══ -->
+        <div id="db-pane-letters" style="display:contents;">
 
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div id="retrainStatusText" style="font-size:13px; color:var(--text-muted);">
-              Model status: <strong>Ready</strong>
-            </div>
-            <button class="btn btn-success btn-sm" id="retrainBtn" onclick="doRetrain()">Retrain Model</button>
-          </div>
+          <!-- Letter picker -->
+          <div class="db-card">
+            <div class="sec-label">SELECT TARGET LETTER</div>
+            <div class="letter-grid" id="letterGrid"><!-- built by JS --></div>
 
-          <div id="retrainProgressBlock" style="display:none; flex-direction:column; gap:4px;">
-            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim);">
-              <span id="retrainEpoch">Epoch 0/50</span>
-              <span id="retrainLoss">Loss: 0.0000</span>
-            </div>
-            <div class="track"><div class="fill fill-stab" id="retrainFill" style="width:0%"></div></div>
-          </div>
-
-          <div id="retrainResultsBlock" style="display:none;">
-            <div class="sec-label" style="font-size:9px; margin-bottom:6px;">RETRAINING RESULTS SUMMARY</div>
-            <div class="retrain-stats-row">
-              <div class="retrain-stat-box">
-                <span class="db-small-lbl" style="font-size:9px">Old Accuracy</span>
-                <span class="retrain-val" id="retrainOldAcc">0.0%</span>
-              </div>
-              <div class="retrain-stat-box">
-                <span class="db-small-lbl" style="font-size:9px">New Accuracy</span>
-                <span class="retrain-val green" id="retrainNewAcc">0.0%</span>
-              </div>
-              <div class="retrain-stat-box">
-                <span class="db-small-lbl" style="font-size:9px">Improvement</span>
-                <span class="retrain-val" id="retrainDelta">0.0%</span>
-              </div>
+            <!-- Live cam for dataset -->
+            <div style="position:relative; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:#000;">
+              <img id="videoFeedDataset" style="width:100%; aspect-ratio:4/3; object-fit:cover; display:block;" alt="">
             </div>
           </div>
-        </div>
 
-        <!-- Tally row -->
-        <div class="db-tally" id="dbTally"></div>
+          <!-- Detect + save -->
+          <div class="db-card" style="justify-content:space-between;">
+            <div class="sec-label">LIVE DETECTION</div>
+
+            <div class="db-target-row">
+              <div class="db-target-block">
+                <div class="db-small-lbl">Target</div>
+                <div class="db-big-letter" id="dbTargetLetter">A</div>
+              </div>
+              <div class="db-vs">vs</div>
+              <div class="db-target-block">
+                <div class="db-small-lbl">Detected</div>
+                <div class="db-big-letter detected" id="dbDetected">—</div>
+              </div>
+            </div>
+
+            <div class="db-match" id="dbMatch">Select a letter to begin</div>
+
+            <button class="db-save-btn" id="dbSaveBtn" onclick="doSave()">SAVE SAMPLE</button>
+
+            <button class="btn btn-ghost" id="dbDeleteBtn" onclick="doDeleteLast()"
+                    style="width:100%; font-size:12px; height:32px;">
+              Delete Last Sample
+            </button>
+
+            <div style="text-align:center; font-size:12px; color:var(--text-dim);">
+              Session total: <strong id="dbSessionTotal">0</strong> samples
+            </div>
+          </div>
+
+          <!-- Retrain block -->
+          <div class="db-card db-retrain-card">
+            <div class="sec-label">MODEL RETRAINING &amp; SYSTEM STATUS</div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div id="retrainStatusText" style="font-size:13px; color:var(--text-muted);">
+                Model status: <strong>Ready</strong>
+              </div>
+              <button class="btn btn-success btn-sm" id="retrainBtn" onclick="doRetrain()">Retrain Model</button>
+            </div>
+
+            <div id="retrainProgressBlock" style="display:none; flex-direction:column; gap:4px;">
+              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim);">
+                <span id="retrainEpoch">Epoch 0/50</span>
+                <span id="retrainLoss">Loss: 0.0000</span>
+              </div>
+              <div class="track"><div class="fill fill-stab" id="retrainFill" style="width:0%"></div></div>
+            </div>
+
+            <div id="retrainResultsBlock" style="display:none;">
+              <div class="sec-label" style="font-size:9px; margin-bottom:6px;">RETRAINING RESULTS SUMMARY</div>
+              <div class="retrain-stats-row">
+                <div class="retrain-stat-box">
+                  <span class="db-small-lbl" style="font-size:9px">Old Accuracy</span>
+                  <span class="retrain-val" id="retrainOldAcc">0.0%</span>
+                </div>
+                <div class="retrain-stat-box">
+                  <span class="db-small-lbl" style="font-size:9px">New Accuracy</span>
+                  <span class="retrain-val green" id="retrainNewAcc">0.0%</span>
+                </div>
+                <div class="retrain-stat-box">
+                  <span class="db-small-lbl" style="font-size:9px">Improvement</span>
+                  <span class="retrain-val" id="retrainDelta">0.0%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tally row -->
+          <div class="db-tally" id="dbTally"></div>
+
+        </div><!-- /pane-letters -->
+
+        <!-- ══ PANE: VIDEO CLIPS (new) ══ -->
+        <div id="db-pane-clips" style="display:none; grid-column:1/-1;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+
+            <!-- LEFT: Supabase settings + form -->
+            <div style="display:flex; flex-direction:column; gap:14px;">
+
+              <!-- Supabase connection card -->
+              <div class="db-card" style="gap:10px;">
+                <div class="sec-label">SUPABASE CONNECTION</div>
+                <div class="sb-status-row">
+                  <div class="sb-dot" id="sbDot"></div>
+                  <span id="sbStatusText" style="font-size:12px; color:var(--text-dim);">Not connected</span>
+                </div>
+                <div class="clip-field">
+                  <label>Project URL</label>
+                  <input type="text" id="sbUrl" placeholder="https://xxxx.supabase.co">
+                </div>
+                <div class="clip-field">
+                  <label>Anon Key</label>
+                  <input type="password" id="sbKey" placeholder="eyJhbGci…">
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="doConnectSupabase()" style="align-self:flex-start;">Connect</button>
+              </div>
+
+              <!-- Record form -->
+              <div class="db-card" style="gap:12px;">
+                <div class="sec-label">CLIP SETTINGS</div>
+
+                <div class="clip-field">
+                  <label>Contributor Name (optional)</label>
+                  <input type="text" id="clipContributor" placeholder="Your name or leave blank">
+                </div>
+
+                <div class="clip-form-row">
+                  <div class="clip-field">
+                    <label>Category</label>
+                    <select id="clipCategory" onchange="onClipCategoryChange()">
+                      <option value="alphabet">Alphabet Letter</option>
+                      <option value="word_signs">Word Sign</option>
+                    </select>
+                  </div>
+                  <div class="clip-field">
+                    <label>Sign</label>
+                    <select id="clipSign"></select>
+                  </div>
+                </div>
+
+                <div class="clip-field">
+                  <label>Meaning / Description</label>
+                  <input type="text" id="clipMeaning" placeholder="e.g. Thank you — friendly greeting">
+                </div>
+              </div>
+
+            </div><!-- /left col -->
+
+            <!-- RIGHT: Camera + record -->
+            <div style="display:flex; flex-direction:column; gap:14px;">
+
+              <div class="db-card" style="gap:10px;">
+                <div class="sec-label">CAMERA PREVIEW</div>
+                <div style="position:relative; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:#000;">
+                  <img id="videoFeedClips" style="width:100%; aspect-ratio:4/3; object-fit:cover; display:block;" alt="">
+                  <!-- Recording overlay -->
+                  <div id="clipRecOverlay" style="display:none; position:absolute; top:8px; right:8px;">
+                    <span class="clip-status-badge recording">&#9679; REC</span>
+                  </div>
+                </div>
+
+                <!-- Progress bar -->
+                <div id="clipProgressBar" style="display:none;">
+                  <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-bottom:4px;">
+                    <span>Recording…</span>
+                    <span id="clipFrameCount">0 frames</span>
+                  </div>
+                  <div class="track"><div class="fill fill-stab" id="clipFill" style="width:0%; background:#dc2626;"></div></div>
+                </div>
+
+                <!-- Record / Stop button -->
+                <button class="clip-record-btn" id="clipRecordBtn" onclick="doToggleRecording()">
+                  &#9654; Record (4 s)
+                </button>
+                <button class="btn btn-ghost" id="clipCancelBtn" onclick="doCancelRecording()"
+                        style="display:none; font-size:12px; height:30px;">
+                  Cancel
+                </button>
+
+                <!-- Upload status -->
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span class="clip-status-badge idle" id="clipUploadBadge">&#9679; Idle</span>
+                  <span id="clipUploadMsg" style="font-size:11px; color:var(--text-dim);"></span>
+                </div>
+              </div>
+
+            </div><!-- /right col -->
+
+          </div><!-- /inner grid -->
+
+          <!-- Full-width stats -->
+          <div class="db-card db-retrain-card" style="margin-top:14px; grid-column:1/-1;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div class="sec-label" style="margin-bottom:0;">CLIP COUNTS — LOCAL &amp; SUPABASE</div>
+              <button class="btn btn-ghost btn-sm" onclick="loadClipStats()">&#8635; Refresh</button>
+            </div>
+            <div id="clipStatsTableWrap" style="max-height:220px; overflow-y:auto;">
+              <table class="clip-stats-table">
+                <thead>
+                  <tr>
+                    <th>Sign</th>
+                    <th>Category</th>
+                    <th>Local clips</th>
+                    <th>In Supabase</th>
+                  </tr>
+                </thead>
+                <tbody id="clipStatsTbody">
+                  <tr><td colspan="4" style="color:var(--text-dim); font-size:11px;">Click Refresh to load stats</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /pane-clips -->
 
       </div>
     </div><!-- /dataset -->
@@ -1797,7 +2073,8 @@ async function startPolling() {
   // Wire video feeds to MJPEG stream once — browser handles streaming natively
   try {
     const streamUrl = await window.pywebview.api.get_stream_url();
-    ['videoFeed','videoFeedPractice','videoFeedDataset'].forEach(id => {
+    clipMjpegUrl = streamUrl;
+    ['videoFeed','videoFeedPractice','videoFeedDataset','videoFeedClips'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.src = streamUrl;
     });
@@ -1816,6 +2093,7 @@ async function poll() {
     if (currentScreen === 'dataset') {
       renderDataset(s);
       pollRetraining(s);
+      if (clipActiveTab === 'clips') renderClipState(s);
     }
     renderStatus(s);
   } catch(_) {}
@@ -2562,6 +2840,229 @@ async function doRetrain() {
     if (res.error) setFooter('Error: ' + res.error);
     else document.getElementById('retrainResultsBlock').style.display = 'none';
   } catch(e) { setFooter('Retrain error: ' + e); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   VIDEO CLIPS — Dataset Builder tab 2
+══════════════════════════════════════════════════════════════════════ */
+const ALPHABET_SIGNS = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
+const WORD_SIGNS = [
+  'bad','drink','eat','friend','good','goodbye',
+  'hello','help','name','no','please','school',
+  'sick','sorry','thank_you','water','yes',
+];
+
+let clipActiveTab    = 'letters';
+let clipIsRecording  = false;
+let clipCountdown    = null;   // setInterval handle for countdown
+let clipAutoStop     = null;   // setTimeout handle for auto-stop at 4 s
+let clipMjpegUrl     = '';     // set when MJPEG url is known
+
+function switchDbTab(tab) {
+  clipActiveTab = tab;
+  document.getElementById('dbTab-letters').classList.toggle('active', tab === 'letters');
+  document.getElementById('dbTab-clips').classList.toggle('active', tab === 'clips');
+  document.getElementById('db-pane-letters').style.display = tab === 'letters' ? 'contents' : 'none';
+  document.getElementById('db-pane-clips').style.display   = tab === 'clips'   ? 'block'    : 'none';
+
+  if (tab === 'clips') {
+    // Point clip cam at the same MJPEG stream
+    const clipImg = document.getElementById('videoFeedClips');
+    if (clipImg && clipMjpegUrl && !clipImg.src.includes(clipMjpegUrl.split('?')[0])) {
+      clipImg.src = clipMjpegUrl;
+    }
+    onClipCategoryChange();  // populate sign dropdown
+    lucide.createIcons();
+  }
+}
+
+function onClipCategoryChange() {
+  const cat    = document.getElementById('clipCategory').value;
+  const sel    = document.getElementById('clipSign');
+  const signs  = cat === 'alphabet' ? ALPHABET_SIGNS : WORD_SIGNS;
+  const prev   = sel.value;
+  sel.innerHTML = signs.map(s => `<option value="${s}">${s.replace('_',' ').toUpperCase()}</option>`).join('');
+  if (signs.includes(prev)) sel.value = prev;
+  // Pre-fill meaning for word signs
+  const meaningEl = document.getElementById('clipMeaning');
+  if (meaningEl && !meaningEl.value) {
+    meaningEl.value = cat === 'alphabet'
+      ? `ASL/CamSL letter ${sel.value}`
+      : sel.value.replace(/_/g,' ');
+  }
+}
+
+async function doConnectSupabase() {
+  if (!window.pywebview) return;
+  const url = document.getElementById('sbUrl').value.trim();
+  const key = document.getElementById('sbKey').value.trim();
+  if (!url || !key) { setFooter('Enter Supabase URL and Anon Key.'); return; }
+  setFooter('Connecting to Supabase…');
+  try {
+    const res = await window.pywebview.api.configure_supabase(url, key);
+    _updateSbStatus(res.success, res.message);
+    setFooter(res.message);
+  } catch(e) { setFooter('Supabase error: ' + e); }
+}
+
+function _updateSbStatus(connected, msg) {
+  const dot  = document.getElementById('sbDot');
+  const text = document.getElementById('sbStatusText');
+  if (!dot || !text) return;
+  dot.classList.toggle('on', connected);
+  text.textContent = connected ? 'Connected' : (msg || 'Not connected');
+  text.style.color = connected ? 'var(--green)' : 'var(--text-dim)';
+}
+
+async function doToggleRecording() {
+  if (!window.pywebview) return;
+  if (clipIsRecording) {
+    await _stopRecording();
+  } else {
+    await _startCountdown();
+  }
+}
+
+async function _startCountdown() {
+  const btn = document.getElementById('clipRecordBtn');
+  btn.disabled = true;
+  let count = 3;
+  btn.textContent = count + '…';
+  clipCountdown = setInterval(() => {
+    count--;
+    if (count > 0) {
+      btn.textContent = count + '…';
+    } else {
+      clearInterval(clipCountdown);
+      _beginRecording();
+    }
+  }, 900);
+}
+
+async function _beginRecording() {
+  if (!window.pywebview) return;
+  const res = await window.pywebview.api.start_clip_recording();
+  if (!res || !res.success) { _resetRecordBtn(); return; }
+
+  clipIsRecording = true;
+  const btn = document.getElementById('clipRecordBtn');
+  btn.textContent = '■ Stop Recording';
+  btn.classList.add('recording');
+  btn.disabled = false;
+
+  document.getElementById('clipRecOverlay').style.display = 'block';
+  document.getElementById('clipProgressBar').style.display = 'block';
+  document.getElementById('clipCancelBtn').style.display   = 'block';
+  _setUploadBadge('idle', '');
+
+  // Auto-stop after 4 s
+  clipAutoStop = setTimeout(() => _stopRecording(), 4000);
+}
+
+async function _stopRecording() {
+  if (clipAutoStop) { clearTimeout(clipAutoStop); clipAutoStop = null; }
+  if (!clipIsRecording) return;
+  clipIsRecording = false;
+
+  const sign        = document.getElementById('clipSign').value;
+  const category    = document.getElementById('clipCategory').value;
+  const meaning     = document.getElementById('clipMeaning').value.trim() || sign;
+  const contributor = document.getElementById('clipContributor').value.trim();
+
+  _setUploadBadge('uploading', 'Saving…');
+
+  try {
+    const res = await window.pywebview.api.stop_clip_recording(sign, category, meaning, contributor);
+    if (res && res.success) {
+      setFooter(`Clip saved: ${res.frame_count} frames for "${sign.toUpperCase()}"`);
+    } else {
+      setFooter('Clip save failed.');
+    }
+  } catch(e) { setFooter('Error: ' + e); }
+
+  _resetRecordBtn();
+}
+
+async function doCancelRecording() {
+  if (clipAutoStop) { clearTimeout(clipAutoStop); clipAutoStop = null; }
+  if (clipCountdown) { clearInterval(clipCountdown); clipCountdown = null; }
+  clipIsRecording = false;
+  if (window.pywebview) await window.pywebview.api.cancel_clip_recording();
+  _resetRecordBtn();
+  _setUploadBadge('idle', '');
+  setFooter('Recording cancelled.');
+}
+
+function _resetRecordBtn() {
+  clipIsRecording = false;
+  const btn = document.getElementById('clipRecordBtn');
+  btn.textContent = '▶ Record (4 s)';
+  btn.classList.remove('recording');
+  btn.disabled = false;
+  document.getElementById('clipRecOverlay').style.display = 'none';
+  document.getElementById('clipProgressBar').style.display = 'none';
+  document.getElementById('clipCancelBtn').style.display   = 'none';
+}
+
+function _setUploadBadge(status, msg) {
+  const badge = document.getElementById('clipUploadBadge');
+  const msgEl = document.getElementById('clipUploadMsg');
+  if (!badge) return;
+  const icons = { idle:'&#9679;', uploading:'&#8635;', success:'&#10003;', error:'&#10007;', recording:'&#9679;' };
+  const labels = { idle:'Idle', uploading:'Uploading…', success:'Saved!', error:'Error', recording:'REC' };
+  badge.className = `clip-status-badge ${status}`;
+  badge.innerHTML = (icons[status]||'') + ' ' + (labels[status]||status);
+  if (msgEl) msgEl.textContent = msg || '';
+}
+
+function renderClipState(s) {
+  if (!s) return;
+  // Sync upload badge from polled state
+  if (!clipIsRecording && s.clip_upload_status && s.clip_upload_status !== 'idle') {
+    _setUploadBadge(s.clip_upload_status, s.clip_upload_message || '');
+  }
+  // Recording frame counter
+  if (clipIsRecording && s.clip_frame_count !== undefined) {
+    const fill  = document.getElementById('clipFill');
+    const cnt   = document.getElementById('clipFrameCount');
+    const pct   = Math.min((s.clip_frame_count / 120) * 100, 100);
+    if (fill) fill.style.width = pct + '%';
+    if (cnt)  cnt.textContent  = s.clip_frame_count + ' frames';
+  }
+  // Supabase dot
+  if (s.supabase_connected !== undefined) {
+    _updateSbStatus(s.supabase_connected, s.supabase_connected ? 'Connected' : 'Not connected');
+  }
+}
+
+async function loadClipStats() {
+  if (!window.pywebview) return;
+  try {
+    const res   = await window.pywebview.api.get_clip_stats();
+    const local  = res.local  || {};
+    const remote = res.remote || {};
+    const all    = new Set([...Object.keys(local), ...Object.keys(remote)]);
+    const tbody  = document.getElementById('clipStatsTbody');
+    if (!tbody) return;
+
+    if (all.size === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim); font-size:11px;">No clips recorded yet.</td></tr>';
+      return;
+    }
+
+    const rows = [...all].sort().map(sign => {
+      const cat = WORD_SIGNS.includes(sign.toLowerCase()) ? 'Word Sign' : 'Alphabet';
+      const l   = local[sign]  || 0;
+      const r   = remote[sign] || 0;
+      return `<tr>
+        <td>${sign.replace(/_/g,' ').toUpperCase()}</td>
+        <td style="color:var(--text-dim)">${cat}</td>
+        <td><span class="clip-stat-num">${l}</span></td>
+        <td><span class="clip-stat-remote">${r}</span></td>
+      </tr>`;
+    });
+    tbody.innerHTML = rows.join('');
+  } catch(e) { setFooter('Stats error: ' + e); }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
