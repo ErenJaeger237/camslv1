@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from . import retrain as _retrain_mod
+from . import retrain_signs as _retrain_signs_mod
 
 router = APIRouter()
 
@@ -105,11 +106,19 @@ def add_word_contribution(item: WordContribution):
 
     sign_dir = WORD_SIGNS_DIR / sign
     sign_dir.mkdir(parents=True, exist_ok=True)
-    # Use nanosecond timestamp to avoid collisions
     filename = f"{time.time_ns()}.json"
     with open(sign_dir / filename, "w") as f:
         json.dump([[round(v, 6) for v in frame] for frame in item.sequence], f)
-    return {"ok": True}
+
+    # Count total word-sign contributions and maybe trigger RF retraining
+    total_word = sum(
+        len(list(d.glob("*.json")))
+        for d in WORD_SIGNS_DIR.iterdir()
+        if d.is_dir()
+    )
+    _retrain_signs_mod.maybe_auto_retrain(total_word)
+
+    return {"ok": True, "total": total_word}
 
 
 @router.get("/word-contributions/counts")

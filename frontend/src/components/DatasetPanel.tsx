@@ -5,13 +5,16 @@ import { drawSkeletonOnto, clearCanvas } from "../lib/skeleton";
 import {
   addContribution, deleteLastContribution, getContributionCounts,
   addWordContribution, getWordContributionCounts, deleteLastWordContribution,
-  triggerRetrain, getRetrainStatus, uploadClip, getClipStats,
+  triggerRetrain, getRetrainStatus,
+  triggerWordRetrain, getWordRetrainStatus,
+  uploadClip, getClipStats,
 } from "../lib/api";
 import { CameraIcon, XIcon } from "./icons";
 import { cn } from "../lib/utils";
 
 const LABELS = "ABCDEFGHIKLMNOPQRSTUVWXY".split("");
-const AUTO_EVERY = 25;
+const AUTO_EVERY      = 25;
+const WORD_AUTO_EVERY = 10;
 
 const WORD_SIGNS = [
   { id: "hello",     label: "Hello" },
@@ -106,11 +109,16 @@ export function DatasetPanel() {
   const [status,        setStatus]        = useState<{ msg: string; ok: boolean } | null>(null);
   const [handsDetected, setHandsDetected] = useState(0);
 
-  // ── Retrain ──────────────────────────────────────────────────────────────────
+  // ── Retrain (alphabet) ───────────────────────────────────────────────────────
   const [retrainState, setRetrainState] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [retrainMsg,   setRetrainMsg]   = useState("");
   const [modelVersion, setModelVersion] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Retrain (word signs) ─────────────────────────────────────────────────────
+  const [wordRetrainState, setWordRetrainState] = useState<"idle" | "running" | "done" | "failed">("idle");
+  const [wordRetrainMsg,   setWordRetrainMsg]   = useState("");
+  const wordPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // numHands=2 always: one landmarker handles both modes, no reinit on mode switch.
   // detect() → first hand only (alphabet); detectAll() → both hands (word signs).
@@ -131,6 +139,7 @@ export function DatasetPanel() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       cancelAnimationFrame(rafRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
+      if (wordPollRef.current) clearInterval(wordPollRef.current);
     };
   }, []);
 
@@ -159,6 +168,21 @@ export function DatasetPanel() {
       } catch { /* ignore */ }
     }, 2000);
   }, [modelVersion]);
+
+  const startWordPolling = useCallback(() => {
+    if (wordPollRef.current) return;
+    wordPollRef.current = setInterval(async () => {
+      try {
+        const r = await getWordRetrainStatus();
+        setWordRetrainState(r.state as "idle" | "running" | "done" | "failed");
+        setWordRetrainMsg(r.message);
+        if (r.state === "done" || r.state === "failed") {
+          clearInterval(wordPollRef.current!);
+          wordPollRef.current = null;
+        }
+      } catch { /* ignore */ }
+    }, 2000);
+  }, []);
 
   // ── RAF loop ─────────────────────────────────────────────────────────────────
   // Always calls detectAll (numHands=2) so BOTH hands are always visible on canvas.
@@ -273,10 +297,19 @@ export function DatasetPanel() {
       return;
     }
     try {
-      await addWordContribution(selectedSign, frames.map((f) => Array.from(f)));
+      const saved = await addWordContribution(selectedSign, frames.map((f) => Array.from(f)));
       const r = await getWordContributionCounts();
       setWordCounts(r.counts);
-      setStatus({ msg: `Saved "${selectedSign}" — ${r.counts[selectedSign] ?? 1} samples`, ok: true });
+      const signCount = r.counts[selectedSign] ?? 1;
+      const totalWord = Object.values(r.counts).reduce((a, b) => a + b, 0);
+      setStatus({ msg: `Saved "${selectedSign}" — ${signCount} sample${signCount !== 1 ? "s" : ""}`, ok: true });
+      // Mirror backend auto-trigger: show retrain state when threshold crossed
+      if (saved && "total" in saved && (saved as any).total % WORD_AUTO_EVERY === 0) {
+        setWordRetrainState("running");
+        setWordRetrainMsg("Auto-retraining CamSL word-sign model…");
+        startWordPolling();
+      }
+      void totalWord; // suppress unused warning
     } catch (e) { setStatus({ msg: "Error saving: " + String(e), ok: false }); }
   };
 
@@ -381,6 +414,13 @@ export function DatasetPanel() {
       await triggerRetrain();
       setRetrainState("running"); setRetrainMsg("Retraining started…"); startPolling();
     } catch (e) { setStatus({ msg: "Could not start retrain: " + String(e), ok: false }); }
+  };
+
+  const handleWordRetrain = async () => {
+    try {
+      await triggerWordRetrain();
+      setWordRetrainState("running"); setWordRetrainMsg("Retraining CamSL word-sign model…"); startWordPolling();
+    } catch (e) { setStatus({ msg: "Could not start word-sign retrain: " + String(e), ok: false }); }
   };
 
   const nextThreshold = AUTO_EVERY - (total % AUTO_EVERY || AUTO_EVERY);
@@ -601,6 +641,38 @@ export function DatasetPanel() {
               </div>
             </div>
 
+            {/* Word-sign retrain card */}
+            <div className={cn(
+              "rounded-2xl p-4 border shadow transition-colors",
+              wordRetrainState === "running" ? "bg-yellow-900/20 border-yellow-700/40" :
+              wordRetrainState === "done"    ? "bg-teal-900/20 border-teal-700/40" :
+              wordRetrainState === "failed"  ? "bg-red-900/20 border-red-700/40" :
+              "bg-navy-800 border-navy-700/60"
+            )}>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-2">
+                CamSL Word-Sign Model
+              </p>
+              {wordRetrainState === "running" ? (
+                <div className="flex items-center gap-2 text-yellow-300 text-xs">
+                  <span className="w-3 h-3 rounded-full border-2 border-yellow-400 border-t-transparent animate-spin shrink-0" />
+                  {wordRetrainMsg || "Training…"}
+                </div>
+              ) : wordRetrainState === "done" ? (
+                <p className="text-xs text-teal-300">{wordRetrainMsg}</p>
+              ) : wordRetrainState === "failed" ? (
+                <p className="text-xs text-red-300">{wordRetrainMsg}</p>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Auto-trains every {WORD_AUTO_EVERY} contributions (needs ≥ 3 samples in 2+ signs). Or train now.
+                </p>
+              )}
+              <button onClick={handleWordRetrain} disabled={wordRetrainState === "running"}
+                className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-navy-700 hover:bg-teal-700/50 disabled:opacity-40 disabled:cursor-not-allowed text-sm transition-colors cursor-pointer border border-navy-600">
+                <RetrainIcon className="w-4 h-4" />
+                {wordRetrainState === "running" ? "Training…" : "Retrain Now"}
+              </button>
+            </div>
+
             <button onClick={handleDeleteWord}
               className="flex items-center justify-center gap-2 py-2 rounded-xl bg-navy-700 hover:bg-red-900/50 text-sm transition-colors cursor-pointer border border-navy-600">
               <XIcon className="w-4 h-4" /> Delete Last Sample
@@ -611,7 +683,9 @@ export function DatasetPanel() {
               <p>1. Select a sign, position both hands in frame</p>
               <p>2. Click Record — 3-second countdown starts</p>
               <p>3. Perform the sign clearly; 30 frames auto-captured</p>
-              <p>4. Aim for ≥ 15 samples per sign</p>
+              <p>4. Contribute ≥ 3 samples in ≥ 2 signs to unlock retraining</p>
+              <p>5. Every {WORD_AUTO_EVERY} samples the CamSL model retrains automatically</p>
+              <p>6. Once trained, your signs override the ASL baseline model</p>
             </div>
           </>
         )}

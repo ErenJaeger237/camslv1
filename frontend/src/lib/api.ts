@@ -81,6 +81,13 @@ export const triggerRetrain = () =>
 export const getRetrainStatus = () =>
   get<{ state: string; message: string; version: number }>("/api/retrain/status");
 
+// ── Word-sign Retrain ─────────────────────────────────────────────────────────
+export const triggerWordRetrain = () =>
+  post<{ ok: boolean; message: string }>("/api/retrain-signs/trigger", {});
+
+export const getWordRetrainStatus = () =>
+  get<{ state: string; message: string }>("/api/retrain-signs/status");
+
 // ── Word-sign inference ───────────────────────────────────────────────────────
 export const predictSign = (sequence: number[][]) =>
   post<{ sign: string; confidence: number }>("/api/signs/predict", { sequence });
