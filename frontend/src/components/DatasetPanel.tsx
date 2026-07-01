@@ -5,7 +5,7 @@ import { drawSkeletonOnto, clearCanvas } from "../lib/skeleton";
 import {
   addContribution, deleteLastContribution, getContributionCounts,
   addWordContribution, getWordContributionCounts, deleteLastWordContribution,
-  triggerRetrain, getRetrainStatus,
+  triggerRetrain, getRetrainStatus, uploadClip, getClipStats,
 } from "../lib/api";
 import { CameraIcon, XIcon } from "./icons";
 import { cn } from "../lib/utils";
@@ -33,6 +33,26 @@ const WORD_SIGNS = [
 
 const WORD_FRAMES = 30;
 
+const CLIP_ALPHABET = "ABCDEFGHIKLMNOPQRSTUVWXY".split("");
+const CLIP_WORD_SIGNS = [
+  { id: "hello",     label: "Hello" },
+  { id: "thank_you", label: "Thank You" },
+  { id: "yes",       label: "Yes" },
+  { id: "no",        label: "No" },
+  { id: "please",    label: "Please" },
+  { id: "help",      label: "Help" },
+  { id: "sorry",     label: "Sorry" },
+  { id: "goodbye",   label: "Goodbye" },
+  { id: "name",      label: "Name" },
+  { id: "eat",       label: "Eat" },
+  { id: "drink",     label: "Drink" },
+  { id: "water",     label: "Water" },
+  { id: "good",      label: "Good" },
+  { id: "bad",       label: "Bad" },
+  { id: "friend",    label: "Friend" },
+];
+const SESSION_ID = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+
 function RetrainIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -50,8 +70,8 @@ export function DatasetPanel() {
   const capturingRef = useRef(false);
 
   // ── Mode ────────────────────────────────────────────────────────────────────
-  const [mode, setMode] = useState<"alphabet" | "word">("alphabet");
-  const modeRef = useRef<"alphabet" | "word">("alphabet");
+  const [mode, setMode] = useState<"alphabet" | "word" | "clips">("alphabet");
+  const modeRef = useRef<"alphabet" | "word" | "clips">("alphabet");
   modeRef.current = mode;
 
   // ── Alphabet state ──────────────────────────────────────────────────────────
@@ -66,6 +86,20 @@ export function DatasetPanel() {
   const [wordFrameCount, setWordFrameCount] = useState(0);
   const [countdown,      setCountdown]      = useState<number | null>(null);
   const wordCaptureRef = useRef<Float32Array[]>([]);
+
+  // ── Video Clip state ────────────────────────────────────────────────────────
+  const [clipCategory,     setClipCategory]     = useState<"alphabet" | "word_signs">("alphabet");
+  const [clipSign,         setClipSign]         = useState("A");
+  const [clipContributor,  setClipContributor]  = useState("");
+  const [clipRecording,    setClipRecording]    = useState(false);
+  const [clipCountdown,    setClipCountdown]    = useState<number | null>(null);
+  const [clipProgress,     setClipProgress]     = useState(0);   // 0–100
+  const [clipUploadState,  setClipUploadState]  = useState<"idle"|"uploading"|"success"|"error">("idle");
+  const [clipUploadMsg,    setClipUploadMsg]    = useState("");
+  const [clipStats,        setClipStats]        = useState<Record<string, number>>({});
+  const [clipStatsTotal,   setClipStatsTotal]   = useState(0);
+  const recorderRef   = useRef<MediaRecorder | null>(null);
+  const clipTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Shared UI ────────────────────────────────────────────────────────────────
   const [capturing,     setCapturing]     = useState(false);
@@ -99,6 +133,12 @@ export function DatasetPanel() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Load clip stats when entering clips tab
+  useEffect(() => {
+    if (mode !== "clips") return;
+    getClipStats().then((r) => { setClipStats(r.counts); setClipStatsTotal(r.total); }).catch(() => {});
+  }, [mode]);
 
   // ── Retrain polling ───────────────────────────────────────────────────────────
   const startPolling = useCallback(() => {
@@ -240,6 +280,84 @@ export function DatasetPanel() {
     } catch (e) { setStatus({ msg: "Error saving: " + String(e), ok: false }); }
   };
 
+  // ── Video clip recording ──────────────────────────────────────────────────────
+  const handleClipRecord = async () => {
+    if (!streamRef.current || clipRecording || clipCountdown !== null) return;
+    setClipUploadState("idle");
+    setClipUploadMsg("");
+    setClipProgress(0);
+
+    // 3-2-1 countdown
+    for (const n of [3, 2, 1]) {
+      setClipCountdown(n);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    setClipCountdown(null);
+
+    // Start recording
+    const chunks: Blob[] = [];
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+      ? "video/webm;codecs=vp8"
+      : "video/webm";
+    const recorder = new MediaRecorder(streamRef.current, { mimeType });
+    recorderRef.current = recorder;
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+    const DURATION_MS = 4000;
+    const startTime   = Date.now();
+    setClipRecording(true);
+
+    clipTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      setClipProgress(Math.min((elapsed / DURATION_MS) * 100, 100));
+    }, 80);
+
+    recorder.start(200);   // collect data every 200 ms
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      setTimeout(() => recorder.stop(), DURATION_MS);
+    });
+
+    if (clipTimerRef.current) { clearInterval(clipTimerRef.current); clipTimerRef.current = null; }
+    setClipRecording(false);
+    setClipProgress(100);
+
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size < 200) {
+      setClipUploadState("error");
+      setClipUploadMsg("Recording too short or empty. Try again.");
+      return;
+    }
+
+    setClipUploadState("uploading");
+    setClipUploadMsg("Uploading to Supabase…");
+
+    const fps = 30;
+    const frameCount = Math.round((DURATION_MS / 1000) * fps);
+    try {
+      const res = await uploadClip(blob, {
+        sign_name:        clipCategory === "alphabet" ? clipSign : clipSign,
+        category:         clipCategory,
+        meaning:          clipCategory === "alphabet"
+                            ? `CamSL letter ${clipSign}`
+                            : CLIP_WORD_SIGNS.find((s) => s.id === clipSign)?.label ?? clipSign,
+        contributor_name: clipContributor.trim(),
+        contributor_id:   SESSION_ID,
+        frame_count:      frameCount,
+        fps,
+      });
+      setClipUploadState("success");
+      setClipUploadMsg(`Saved! ${(blob.size / 1024).toFixed(0)} KB uploaded.`);
+      if (res.ok) {
+        // Refresh stats
+        getClipStats().then((r) => { setClipStats(r.counts); setClipStatsTotal(r.total); }).catch(() => {});
+      }
+    } catch (e) {
+      setClipUploadState("error");
+      setClipUploadMsg("Upload failed: " + String(e));
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await deleteLastContribution();
@@ -325,13 +443,13 @@ export function DatasetPanel() {
 
         {/* Mode toggle */}
         <div className="flex rounded-xl border border-navy-700/60 overflow-hidden bg-navy-800 shadow">
-          {(["alphabet", "word"] as const).map((m) => (
+          {(["alphabet", "word", "clips"] as const).map((m) => (
             <button key={m} onClick={() => { setMode(m); setStatus(null); }}
               className={cn(
-                "flex-1 py-2 text-sm font-semibold transition-colors cursor-pointer",
+                "flex-1 py-2 text-xs font-semibold transition-colors cursor-pointer",
                 mode === m ? "bg-teal-500 text-navy-950" : "text-slate-400 hover:text-slate-200"
               )}>
-              {m === "alphabet" ? "Alphabet" : "Word Signs"}
+              {m === "alphabet" ? "Alphabet" : m === "word" ? "Word Signs" : "🎥 Video Clips"}
             </button>
           ))}
         </div>
@@ -494,6 +612,165 @@ export function DatasetPanel() {
               <p>2. Click Record — 3-second countdown starts</p>
               <p>3. Perform the sign clearly; 30 frames auto-captured</p>
               <p>4. Aim for ≥ 15 samples per sign</p>
+            </div>
+          </>
+        )}
+
+        {/* ── VIDEO CLIPS MODE ────────────────────────────────────────────── */}
+        {mode === "clips" && (
+          <>
+            {/* Category + sign */}
+            <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow-lg space-y-3">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Sign to Record</p>
+
+              <div className="flex rounded-lg border border-navy-700/60 overflow-hidden bg-navy-700">
+                {(["alphabet", "word_signs"] as const).map((c) => (
+                  <button key={c} onClick={() => {
+                    setClipCategory(c);
+                    setClipSign(c === "alphabet" ? "A" : "hello");
+                  }}
+                    className={cn(
+                      "flex-1 py-1.5 text-xs font-semibold transition-colors cursor-pointer",
+                      clipCategory === c ? "bg-teal-500 text-navy-950" : "text-slate-400 hover:text-slate-200"
+                    )}>
+                    {c === "alphabet" ? "Letter" : "Word Sign"}
+                  </button>
+                ))}
+              </div>
+
+              {clipCategory === "alphabet" ? (
+                <div className="grid grid-cols-6 gap-1">
+                  {CLIP_ALPHABET.map((l) => (
+                    <button key={l} onClick={() => setClipSign(l)}
+                      className={cn(
+                        "aspect-square flex items-center justify-center text-xs font-mono rounded-lg transition-all cursor-pointer border",
+                        clipSign === l
+                          ? "bg-teal-500 text-navy-950 font-bold border-teal-400"
+                          : "bg-navy-700 hover:bg-navy-600 text-slate-300 border-navy-600"
+                      )}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1.5">
+                  {CLIP_WORD_SIGNS.map(({ id, label }) => (
+                    <button key={id} onClick={() => setClipSign(id)}
+                      className={cn(
+                        "py-1.5 px-1 text-[11px] rounded-lg transition-all cursor-pointer border text-center leading-tight",
+                        clipSign === id
+                          ? "bg-teal-500 text-navy-950 font-bold border-teal-400"
+                          : "bg-navy-700 hover:bg-navy-600 text-slate-300 border-navy-600"
+                      )}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Contributor name */}
+            <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow">
+              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block mb-2">
+                Contributor Name (optional)
+              </label>
+              <input
+                type="text"
+                value={clipContributor}
+                onChange={(e) => setClipContributor(e.target.value)}
+                placeholder="Your name or leave blank"
+                className="w-full bg-navy-700 border border-navy-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-teal-500 transition-colors"
+              />
+            </div>
+
+            {/* Record button + progress */}
+            <div className="space-y-2">
+              {/* Countdown overlay handled on video canvas above */}
+              {clipCountdown !== null && (
+                <div className="flex items-center justify-center py-2">
+                  <span className="text-5xl font-black text-teal-400" style={{ textShadow: "0 0 20px #00f3ff" }}>
+                    {clipCountdown}
+                  </span>
+                </div>
+              )}
+
+              {clipRecording && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Recording…
+                    </span>
+                    <span>{clipProgress.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-red-500 rounded-full transition-all duration-75"
+                      style={{ width: `${clipProgress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleClipRecord}
+                disabled={clipRecording || clipCountdown !== null}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-all duration-200 cursor-pointer shadow-lg">
+                <CameraIcon className="w-5 h-5" />
+                {clipCountdown !== null
+                  ? `Starting in ${clipCountdown}…`
+                  : clipRecording
+                  ? "Recording…"
+                  : `Record "${clipCategory === "alphabet" ? clipSign : CLIP_WORD_SIGNS.find(s=>s.id===clipSign)?.label ?? clipSign}" (4s)`}
+              </button>
+
+              {/* Upload status */}
+              {clipUploadState !== "idle" && (
+                <div className={cn(
+                  "rounded-xl p-3 border text-xs flex items-start gap-2",
+                  clipUploadState === "uploading" ? "bg-yellow-900/20 border-yellow-700/40 text-yellow-300" :
+                  clipUploadState === "success"   ? "bg-teal-900/20  border-teal-700/40  text-teal-300"  :
+                                                    "bg-red-900/20   border-red-700/40   text-red-300"
+                )}>
+                  {clipUploadState === "uploading" && <span className="w-3 h-3 rounded-full border-2 border-yellow-400 border-t-transparent animate-spin shrink-0 mt-0.5" />}
+                  {clipUploadMsg}
+                </div>
+              )}
+            </div>
+
+            {/* Clip stats */}
+            <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 shadow">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
+                  Community Clips — {clipStatsTotal} total
+                </p>
+                <button
+                  onClick={() => getClipStats().then((r) => { setClipStats(r.counts); setClipStatsTotal(r.total); }).catch(() => {})}
+                  className="text-[10px] text-slate-500 hover:text-teal-400 transition-colors cursor-pointer">
+                  ↻ refresh
+                </button>
+              </div>
+              {Object.keys(clipStats).length === 0 ? (
+                <p className="text-xs text-slate-500">No clips yet — record the first one!</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {Object.entries(clipStats).sort(([a],[b])=>a.localeCompare(b)).map(([sign, count]) => (
+                    <div key={sign} className="flex items-center gap-2 text-xs">
+                      <span className="w-20 text-slate-400 shrink-0 truncate font-mono">{sign}</span>
+                      <div className="flex-1 h-1 bg-navy-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min((count / 20) * 100, 100)}%` }} />
+                      </div>
+                      <span className="w-5 text-right text-teal-400 font-mono">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-navy-800 rounded-2xl p-4 border border-navy-700/60 text-xs text-slate-400 space-y-1.5">
+              <p className="text-slate-200 font-semibold text-sm mb-1">How it works</p>
+              <p>1. Select a letter or word sign</p>
+              <p>2. Click Record — 3-second countdown, then 4s clip captured</p>
+              <p>3. Video is uploaded to the shared Supabase dataset</p>
+              <p>4. Clips include both hands visible in frame</p>
             </div>
           </>
         )}

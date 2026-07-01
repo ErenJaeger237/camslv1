@@ -26,6 +26,7 @@ import sqlite3
 import sys
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
@@ -41,6 +42,7 @@ import webview
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from autocomplete import suggest
+from camsl_dataset import ALPHABET_SIGNS, CamSLVideoRecorder, WORD_SIGNS
 from database import LeitnerDB
 from landmarks import HolisticExtractor, LandmarkExtractor, NUM_HOLISTIC_FEATURES
 from mjpeg import MjpegServer
@@ -76,6 +78,8 @@ FRAME_W       = 540
 FRAME_H       = 405
 JPEG_QUALITY  = 75
 FPS_TARGET    = 30
+
+CLIP_MAX_FRAMES = 150    # hard cap: 5 s at 30 fps — JS stops earlier (4 s)
 
 HAND_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -142,6 +146,12 @@ class CamSLAPI:
             "training_loss":   0.0,
             "training_val_acc":0.0,
             "training_results": None,
+            # Video clip recording
+            "clip_recording":      False,
+            "clip_frame_count":    0,
+            "clip_upload_status":  "idle",   # idle | uploading | success | error
+            "clip_upload_message": "",
+            "supabase_connected":  False,
         }
 
         # Spaced repetition — delegated to LeitnerDB
@@ -170,6 +180,17 @@ class CamSLAPI:
 
         # MJPEG server: JS sets <img src=url> once; browser streams natively.
         self._mjpeg = MjpegServer()
+
+        # Video clip recording — buffers raw frames + landmarks while active.
+        self._session_id    = uuid.uuid4().hex          # anonymous contributor ID for this session
+        self._clip_recorder = CamSLVideoRecorder(PROJECT_ROOT)
+        self._clip_recording = False
+        self._clip_frames:    list = []
+        self._clip_landmarks: list = []
+        self._clip_lock = threading.Lock()
+        self._clip_start_t = 0.0
+        with self._lock:
+            self._state["supabase_connected"] = self._clip_recorder.connected
 
         self._running = True
         threading.Thread(target=self._capture_loop, daemon=True).start()
@@ -379,6 +400,113 @@ class CamSLAPI:
             }
         except Exception as e:
             return {"error": f"Failed to delete last sample: {str(e)}"}
+
+    # -----------------------------------------------------------------------
+    # Video Clip Dataset Builder
+    # -----------------------------------------------------------------------
+
+    def configure_supabase(self, url: str, key: str) -> dict:
+        """
+        Connect the recorder to a Supabase project.
+        Writes credentials to .env on success.
+        Returns {success, message}.
+        """
+        result = self._clip_recorder.configure(url, key)
+        with self._lock:
+            self._state["supabase_connected"] = self._clip_recorder.connected
+        return result
+
+    def start_clip_recording(self) -> dict:
+        """Begin buffering webcam frames for a clip. Returns {success}."""
+        with self._clip_lock:
+            self._clip_frames.clear()
+            self._clip_landmarks.clear()
+            self._clip_recording = True
+            self._clip_start_t   = time.perf_counter()
+        with self._lock:
+            self._state["clip_recording"]      = True
+            self._state["clip_frame_count"]    = 0
+            self._state["clip_upload_status"]  = "idle"
+            self._state["clip_upload_message"] = ""
+        return {"success": True}
+
+    def stop_clip_recording(
+        self,
+        sign_name:        str,
+        category:         str,
+        meaning:          str,
+        contributor_name: str,
+    ) -> dict:
+        """
+        Stop the active recording and save the clip locally + Supabase.
+        Runs the save in a background thread so JS gets an immediate response.
+        Returns {success, frame_count}.
+        """
+        with self._clip_lock:
+            self._clip_recording = False
+            frames    = list(self._clip_frames)
+            landmarks = list(self._clip_landmarks)
+            self._clip_frames.clear()
+            self._clip_landmarks.clear()
+
+        if not frames:
+            with self._lock:
+                self._state["clip_upload_status"]  = "error"
+                self._state["clip_upload_message"] = "No frames captured — was the camera running?"
+            return {"success": False, "frame_count": 0}
+
+        elapsed = time.perf_counter() - self._clip_start_t
+        fps     = round(len(frames) / max(elapsed, 0.1), 1)
+
+        with self._lock:
+            self._state["clip_upload_status"]  = "uploading"
+            self._state["clip_upload_message"] = "Saving clip..."
+            self._state["clip_recording"]      = False
+
+        def _save_thread():
+            result = self._clip_recorder.save_clip(
+                frames=frames,
+                landmarks=landmarks,
+                sign_name=sign_name.strip(),
+                category=category,
+                meaning=meaning.strip(),
+                contributor_name=contributor_name.strip(),
+                contributor_id=self._session_id,
+                fps=fps,
+            )
+            status = "success" if result["success"] else "error"
+            with self._lock:
+                self._state["clip_upload_status"]  = status
+                self._state["clip_upload_message"] = result.get("message", "")
+
+        threading.Thread(target=_save_thread, daemon=True).start()
+        return {"success": True, "frame_count": len(frames)}
+
+    def cancel_clip_recording(self) -> dict:
+        """Discard the current recording without saving."""
+        with self._clip_lock:
+            self._clip_recording = False
+            self._clip_frames.clear()
+            self._clip_landmarks.clear()
+        with self._lock:
+            self._state["clip_recording"]      = False
+            self._state["clip_frame_count"]    = 0
+            self._state["clip_upload_status"]  = "idle"
+            self._state["clip_upload_message"] = ""
+        return {"success": True}
+
+    def get_clip_stats(self) -> dict:
+        """
+        Return clip counts from local storage and Supabase.
+        Returns {local: {sign: count}, remote: {sign: count}, supabase_connected: bool}.
+        """
+        local  = self._clip_recorder.local_stats()
+        remote = self._clip_recorder.remote_stats()
+        return {
+            "local":              local,
+            "remote":             remote,
+            "supabase_connected": self._clip_recorder.connected,
+        }
 
     def trigger_retraining(self):
         """
@@ -762,6 +890,7 @@ class CamSLAPI:
                 self._raw_frame = frame.copy()
                 self._frame_id += 1      # signal ML thread that a new frame is ready
                 raw_lm = self._raw_lm   # read latest landmarks from ML thread
+                last_feats = self._last_features  # for clip landmark buffering
 
             # Skeleton overlay using last-known landmarks
             if raw_lm:
@@ -783,6 +912,21 @@ class CamSLAPI:
                 current_fps = fps_frames / (now - fps_timer)
                 fps_frames  = 0
                 fps_timer   = now
+
+            # Buffer raw (pre-resize) frame for clip recording
+            if self._clip_recording:
+                with self._clip_lock:
+                    if len(self._clip_frames) < CLIP_MAX_FRAMES:
+                        self._clip_frames.append(frame.copy())
+                        if last_feats is not None:
+                            self._clip_landmarks.append(last_feats.copy())
+                        count = len(self._clip_frames)
+                    else:
+                        # Hard cap reached — auto-stop (JS 4s timer normally fires first)
+                        self._clip_recording = False
+                        count = len(self._clip_frames)
+                with self._lock:
+                    self._state["clip_frame_count"] = count
 
             small = cv2.resize(frame, (FRAME_W, FRAME_H))
             _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])

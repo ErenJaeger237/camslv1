@@ -80,3 +80,27 @@ export const triggerRetrain = () =>
 
 export const getRetrainStatus = () =>
   get<{ state: string; message: string; version: number }>("/api/retrain/status");
+
+// ── Video Clip Dataset ─────────────────────────────────────────────────────────
+export async function uploadClip(
+  blob: Blob,
+  meta: {
+    sign_name: string;
+    category: string;
+    meaning: string;
+    contributor_name: string;
+    contributor_id: string;
+    frame_count: number;
+    fps: number;
+  }
+): Promise<{ ok: boolean; video_url?: string; clip_id?: string }> {
+  const form = new FormData();
+  form.append("video", blob, `clip_${Date.now()}.webm`);
+  form.append("metadata", JSON.stringify(meta));
+  const r = await fetch(`${BASE}/api/clips/upload`, { method: "POST", body: form });
+  if (!r.ok) throw new Error(`clips/upload → ${r.status}`);
+  return r.json();
+}
+
+export const getClipStats = () =>
+  get<{ counts: Record<string, number>; total: number }>("/api/clips/stats");
