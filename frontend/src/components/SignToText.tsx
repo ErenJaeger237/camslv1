@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaPipe } from "../hooks/useMediaPipe";
 import { useInference } from "../hooks/useInference";
+import { useHolistic } from "../hooks/useHolistic";
 import { WordBuilder } from "../lib/wordBuilder";
 import { normaliseLandmarks } from "../lib/landmarks";
 import { drawSkeleton, clearCanvas } from "../lib/skeleton";
 import { speak } from "../lib/tts";
-import { getAutocomplete } from "../lib/api";
+import { getAutocomplete, predictSign } from "../lib/api";
 import { useAppStore } from "../store/appStore";
 import { cn } from "../lib/utils";
 import { VolumeIcon, DeleteIcon, XIcon } from "./icons";
 
 const builder = new WordBuilder();
+const CAPTURE_FRAMES = 30;
 
 // ── Circular confidence ring ──────────────────────────────────────
 function ConfRing({ pct }: { pct: number }) {
@@ -42,17 +44,32 @@ export function SignToText() {
   const [fps, setFps] = useState(0);
   const fpsRef = useRef({ frames: 0, last: performance.now() });
 
+  // ── Mode: alphabet vs word-signs ──────────────────────────────────
+  const [wordsMode, setWordsMode] = useState(false);
+  const wordsModeRef = useRef(false);
+
+  // ── Word-signs capture state ──────────────────────────────────────
+  const collectingRef = useRef(false);
+  const signBufferRef = useRef<number[][]>([]);
+  const [collecting, setCollecting] = useState(false);
+  const [frameCount, setFrameCount] = useState(0);
+  const [signResult, setSignResult] = useState<{ sign: string; confidence: number } | null>(null);
+  const [signLoading, setSignLoading] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
+
+  // ── MediaPipe & inference hooks ───────────────────────────────────
   const { ready: mpReady, error: mpError, loadingMsg, detect } = useMediaPipe();
   const { ready: tfReady, predict } = useInference();
+  const { ready: holisticReady, loadingMsg: holisticMsg, detectHolistic } = useHolistic(wordsMode);
 
-  const { setSignResult, setSuggestions, suggestions } = useAppStore();
+  const { setSignResult: storeSignResult, setSuggestions, suggestions } = useAppStore();
   const [localWord, setLocalWord] = useState("");
   const [localSentence, setLocalSentence] = useState("");
   const [localLetter, setLocalLetter] = useState("");
   const [localConf, setLocalConf] = useState(0);
   const lastWordRef = useRef("");
 
-  // Start webcam
+  // ── Webcam start ─────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -61,9 +78,7 @@ export function SignToText() {
           audio: false,
         });
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (e) {
         const msg = String(e);
         if (!msg.includes("AbortError")) setCamError("Camera blocked: " + msg);
@@ -75,11 +90,13 @@ export function SignToText() {
     };
   }, []);
 
+  // ── Main animation loop ───────────────────────────────────────────
   const loop = useCallback(() => {
     rafRef.current = requestAnimationFrame(loop);
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
 
+    // FPS counter
     const now = performance.now();
     fpsRef.current.frames++;
     if (now - fpsRef.current.last >= 1000) {
@@ -89,59 +106,106 @@ export function SignToText() {
 
     if (!mpReady) return;
 
+    // Always run hand detection for skeleton overlay
     const { landmarks } = detect(video);
 
     const canvas = canvasRef.current;
     if (canvas) {
-      const cw = canvas.clientWidth;
-      const ch = canvas.clientHeight;
+      const cw = canvas.clientWidth, ch = canvas.clientHeight;
       if (canvas.width !== cw) canvas.width = cw;
       if (canvas.height !== ch) canvas.height = ch;
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        const vw = video.videoWidth || 640;
-        const vh = video.videoHeight || 480;
+        const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
         if (landmarks) drawSkeleton(ctx, landmarks, cw, ch, vw, vh);
         else clearCanvas(ctx, cw, ch);
       }
     }
 
-    let pred = null;
-    if (landmarks && tfReady) {
-      pred = predict(normaliseLandmarks(landmarks));
+    // ── Alphabet mode ─────────────────────────────────────────────
+    if (!wordsModeRef.current) {
+      let pred = null;
+      if (landmarks && tfReady) pred = predict(normaliseLandmarks(landmarks));
+      const committed = builder.update(pred?.letter ?? null, pred?.confidence ?? 0);
+      const word = builder.currentWord;
+      const sentence = builder.sentence;
+      setLocalLetter(pred?.letter ?? "");
+      setLocalConf(pred?.confidence ?? 0);
+      setLocalWord(word);
+      setLocalSentence(sentence);
+      storeSignResult(pred?.letter ?? "", pred?.confidence ?? 0, word, sentence);
+      if (committed || word !== lastWordRef.current) {
+        lastWordRef.current = word;
+        if (word.length >= 2) {
+          getAutocomplete(word)
+            .then((r) => { builder.setSuggestions(r.suggestions); setSuggestions(r.suggestions); })
+            .catch(() => {});
+        } else {
+          builder.setSuggestions([]); setSuggestions([]);
+        }
+      }
+      return;
     }
 
-    const committed = builder.update(pred?.letter ?? null, pred?.confidence ?? 0);
-    const word = builder.currentWord;
-    const sentence = builder.sentence;
-
-    setLocalLetter(pred?.letter ?? "");
-    setLocalConf(pred?.confidence ?? 0);
-    setLocalWord(word);
-    setLocalSentence(sentence);
-    setSignResult(pred?.letter ?? "", pred?.confidence ?? 0, word, sentence);
-
-    if (committed || word !== lastWordRef.current) {
-      lastWordRef.current = word;
-      if (word.length >= 2) {
-        getAutocomplete(word)
-          .then((r) => { builder.setSuggestions(r.suggestions); setSuggestions(r.suggestions); })
-          .catch(() => {});
-      } else {
-        builder.setSuggestions([]); setSuggestions([]);
+    // ── Word-signs collect mode ───────────────────────────────────
+    if (collectingRef.current && holisticReady) {
+      const features = detectHolistic(video);
+      if (features) {
+        signBufferRef.current.push(Array.from(features));
+        const count = signBufferRef.current.length;
+        setFrameCount(count);
+        if (count >= CAPTURE_FRAMES) {
+          collectingRef.current = false;
+          setCollecting(false);
+          setSignLoading(true);
+          setSignError(null);
+          const seq = [...signBufferRef.current];
+          signBufferRef.current = [];
+          setFrameCount(0);
+          predictSign(seq)
+            .then((r) => { setSignResult(r); setSignLoading(false); })
+            .catch((e) => { setSignError(String(e).replace("Error: ", "")); setSignLoading(false); });
+        }
       }
     }
-  }, [mpReady, tfReady, detect, predict, setSignResult, setSuggestions]);
+  }, [mpReady, tfReady, holisticReady, detect, predict, detectHolistic, storeSignResult, setSuggestions]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
   }, [loop]);
 
+  // ── Handlers ──────────────────────────────────────────────────────
+  const handleModeToggle = (wm: boolean) => {
+    setWordsMode(wm);
+    wordsModeRef.current = wm;
+    collectingRef.current = false;
+    signBufferRef.current = [];
+    setCollecting(false);
+    setFrameCount(0);
+    setSignResult(null);
+    setSignError(null);
+    if (!wm) {
+      // Clear alphabet builder too when switching back
+      builder.clear();
+      setLocalWord(""); setLocalSentence(""); setLocalLetter(""); setLocalConf(0);
+    }
+  };
+
+  const handleCapture = () => {
+    if (!holisticReady || collectingRef.current) return;
+    signBufferRef.current = [];
+    setFrameCount(0);
+    setSignResult(null);
+    setSignError(null);
+    collectingRef.current = true;
+    setCollecting(true);
+  };
+
   const handleClear = () => {
     builder.clear();
     setLocalWord(""); setLocalSentence(""); setLocalLetter(""); setLocalConf(0);
-    setSuggestions([]); setSignResult("", 0, "", "");
+    setSuggestions([]); storeSignResult("", 0, "", "");
   };
   const handleBackspace = () => {
     builder.backspace();
@@ -158,6 +222,7 @@ export function SignToText() {
 
   const fullText = (localSentence + localWord).trim();
   const confPct = Math.round(localConf * 100);
+  const capturePct = Math.round((frameCount / CAPTURE_FRAMES) * 100);
 
   return (
     <div className="flex gap-6 p-6 h-full">
@@ -165,9 +230,26 @@ export function SignToText() {
       {/* ── Webcam column ── */}
       <div className="flex-1 flex flex-col gap-4 min-w-0">
 
+        {/* Mode toggle */}
+        <div className="flex gap-1 p-1 bg-navy-900/60 border border-white/6 rounded-xl self-start">
+          {(["Alphabet", "Word Signs"] as const).map((label, i) => (
+            <button
+              key={label}
+              onClick={() => handleModeToggle(i === 1)}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer",
+                wordsMode === (i === 1)
+                  ? "bg-teal-500 text-navy-950 shadow"
+                  : "text-slate-400 hover:text-white",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Camera card */}
         <div className="relative rounded-2xl overflow-hidden bg-navy-900 border border-white/8 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_16px_48px_rgba(0,0,0,0.6)] flex-1 min-h-0">
-
           {camError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 bg-navy-900">
               <div className="w-12 h-12 rounded-2xl bg-red-900/40 border border-red-700/50 flex items-center justify-center">
@@ -183,60 +265,69 @@ export function SignToText() {
             </div>
           ) : (
             <>
-              <video
-                ref={videoRef}
-                className="w-full h-full object-cover scale-x-[-1]"
-                autoPlay muted playsInline
-              />
+              <video ref={videoRef} className="w-full h-full object-cover scale-x-[-1]" autoPlay muted playsInline />
               <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-              {/* Top-left status chips */}
+              {/* Status chips */}
               <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
                 <span className="bg-black/50 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-slate-400 font-mono border border-white/8">
                   {fps} fps
                 </span>
                 {mpReady ? (
-                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">
-                    Hand ✓
-                  </span>
+                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">Hand ✓</span>
                 ) : mpError ? (
-                  <span className="bg-red-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-red-300 border border-red-700/30">
-                    MP error
-                  </span>
+                  <span className="bg-red-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-red-300 border border-red-700/30">MP error</span>
                 ) : (
                   <span className="bg-amber-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-amber-300 border border-amber-700/30 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                     {loadingMsg}
                   </span>
                 )}
-                {tfReady && (
-                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">
-                    TF.js ✓
-                  </span>
+                {!wordsMode && tfReady && (
+                  <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">TF.js ✓</span>
+                )}
+                {wordsMode && (
+                  holisticReady ? (
+                    <span className="bg-teal-600/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-white border border-teal-400/30">Holistic ✓</span>
+                  ) : (
+                    <span className="bg-amber-900/70 backdrop-blur-md text-[10px] px-2.5 py-1 rounded-lg text-amber-300 border border-amber-700/30 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      {holisticMsg ?? "Loading holistic…"}
+                    </span>
+                  )
                 )}
               </div>
 
-              {/* Detected letter badge — bottom centre with confidence ring */}
-              {localLetter && mpReady && (
+              {/* Alphabet mode: detected letter badge */}
+              {!wordsMode && localLetter && mpReady && (
                 <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
                   <div className="bg-navy-950/75 backdrop-blur-xl border border-white/10 rounded-2xl px-5 py-3 flex items-center gap-4 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-                    {/* Big letter */}
-                    <span
-                      className="text-6xl font-bold text-teal-400 leading-none"
-                      style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 24px rgba(45,212,191,0.55)" }}
-                    >
+                    <span className="text-6xl font-bold text-teal-400 leading-none" style={{ fontFamily: "'Fira Code', monospace", textShadow: "0 0 24px rgba(45,212,191,0.55)" }}>
                       {localLetter}
                     </span>
-                    {/* Confidence ring + label */}
                     <div className="flex flex-col items-center gap-1">
                       <div className="relative">
                         <ConfRing pct={confPct} />
-                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                          {confPct}%
-                        </span>
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">{confPct}%</span>
                       </div>
                       <span className="text-[9px] text-slate-500 uppercase tracking-widest">confidence</span>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Word-signs mode: capture progress bar */}
+              {wordsMode && collecting && (
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-48">
+                  <div className="bg-navy-950/80 backdrop-blur-xl border border-teal-500/30 rounded-xl px-4 py-3 text-center">
+                    <p className="text-[10px] text-teal-300 uppercase tracking-widest mb-2">Recording sign…</p>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-teal-400 rounded-full transition-all duration-100"
+                        style={{ width: `${capturePct}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5">{frameCount}/{CAPTURE_FRAMES} frames</p>
                   </div>
                 </div>
               )}
@@ -244,16 +335,13 @@ export function SignToText() {
           )}
         </div>
 
-        {/* Autocomplete suggestions */}
-        {suggestions.length > 0 && (
+        {/* Autocomplete suggestions (alphabet mode only) */}
+        {!wordsMode && suggestions.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             <span className="label-xs self-center mr-1">Suggestions</span>
             {suggestions.map((s) => (
-              <button
-                key={s}
-                onClick={() => handleSuggestion(s)}
-                className="px-4 py-1.5 bg-white/4 hover:bg-teal-500/15 text-sm rounded-xl transition-all duration-200 border border-white/8 hover:border-teal-500/40 cursor-pointer font-medium text-slate-200 hover:text-teal-300"
-              >
+              <button key={s} onClick={() => handleSuggestion(s)}
+                className="px-4 py-1.5 bg-white/4 hover:bg-teal-500/15 text-sm rounded-xl transition-all duration-200 border border-white/8 hover:border-teal-500/40 cursor-pointer font-medium text-slate-200 hover:text-teal-300">
                 {s}
               </button>
             ))}
@@ -264,63 +352,143 @@ export function SignToText() {
       {/* ── Output column ── */}
       <div className="w-72 flex flex-col gap-4 shrink-0">
 
-        {/* Signing / current word card */}
-        <div className="glass-card p-5">
-          <p className="label-xs mb-3">Current Sign</p>
-          <p className="text-4xl font-bold text-white min-h-[3rem] leading-tight drop-shadow-sm" style={{ fontFamily: "'Fira Code', monospace" }}>
-            {localWord || <span className="text-slate-600 font-normal text-xl">waiting…</span>}
-          </p>
-        </div>
+        {wordsMode ? (
+          /* ── Word-signs panel ── */
+          <>
+            {/* Capture button */}
+            <button
+              onClick={handleCapture}
+              disabled={!holisticReady || collecting || signLoading}
+              className={cn(
+                "w-full py-4 rounded-2xl font-bold text-sm transition-all duration-200 cursor-pointer border",
+                collecting
+                  ? "bg-amber-500/20 border-amber-500/40 text-amber-300 cursor-not-allowed"
+                  : signLoading
+                  ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                  : holisticReady
+                  ? "bg-teal-500 hover:bg-teal-400 border-teal-400 text-navy-950 shadow-lg shadow-teal-900/40"
+                  : "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed",
+              )}
+            >
+              {collecting ? `Recording… ${frameCount}/${CAPTURE_FRAMES}` : signLoading ? "Predicting…" : !holisticReady ? "Loading models…" : "Capture Sign"}
+            </button>
 
-        {/* Translated text card */}
-        <div className="glass-card p-5 flex-1">
-          <p className="label-xs mb-3">Translated Text</p>
-          <div className="text-[15px] text-white leading-relaxed break-words min-h-[5rem]">
-            {localSentence && <span className="text-slate-300">{localSentence}</span>}
-            {localWord && <span className="text-teal-400 font-semibold">{localWord}</span>}
-            {!fullText && <span className="text-slate-600 text-sm">Start signing to build words…</span>}
-          </div>
-        </div>
+            {/* Sign result card */}
+            <div className="glass-card p-5 flex-1 flex flex-col gap-4">
+              <p className="label-xs">Sign Result</p>
 
-        {/* Actions — primary + secondary grouping */}
-        <div className="flex gap-2">
-          {/* PRIMARY — Speak */}
-          <button
-            onClick={handleSpeak}
-            disabled={!fullText}
-            className="btn-primary flex-1"
-          >
-            <VolumeIcon className="w-4 h-4" /> Speak
-          </button>
-          {/* SECONDARY — Backspace */}
-          <button onClick={handleBackspace} title="Backspace" className="btn-ghost w-10 px-0">
-            <DeleteIcon className="w-4 h-4" />
-          </button>
-          {/* SECONDARY — Clear */}
-          <button onClick={handleClear} title="Clear" className="btn-danger w-10 px-0">
-            <XIcon className="w-4 h-4" />
-          </button>
-        </div>
+              {signLoading && (
+                <div className="flex items-center gap-3 text-sm text-slate-400">
+                  <span className="w-4 h-4 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+                  Asking backend…
+                </div>
+              )}
 
-        {/* Alphabet grid */}
-        <div className="glass-card p-4">
-          <p className="label-xs mb-3">Alphabet</p>
-          <div className="grid grid-cols-6 gap-1.5">
-            {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
-              <button key={l}
-                className={cn(
-                  "aspect-square flex items-center justify-center text-xs font-mono rounded-lg transition-all duration-200 cursor-pointer border",
-                  localLetter === l
-                    ? "bg-teal-500 text-navy-950 font-bold border-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.6)] scale-110"
-                    : "bg-white/4 hover:bg-white/8 text-slate-400 hover:text-white border-white/6 hover:border-white/16",
-                )}
-                onClick={() => speak(l)}
-              >
-                {l}
+              {signError && !signLoading && (
+                <div className="bg-red-900/30 border border-red-700/40 rounded-xl p-3 text-xs text-red-300">
+                  {signError}
+                </div>
+              )}
+
+              {signResult && !signLoading && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-end gap-3">
+                    <span className="text-4xl font-bold text-teal-400 capitalize" style={{ fontFamily: "'Fira Code', monospace" }}>
+                      {signResult.sign.replace("_", " ")}
+                    </span>
+                    <span className="text-sm text-slate-400 mb-1 font-mono">
+                      {Math.round(signResult.confidence * 100)}%
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => speak(signResult.sign.replace("_", " "))}
+                    className="btn-primary"
+                  >
+                    <VolumeIcon className="w-4 h-4" /> Speak
+                  </button>
+                </div>
+              )}
+
+              {!signResult && !signLoading && !signError && (
+                <p className="text-sm text-slate-600">
+                  Position your hand, click <strong className="text-slate-400">Capture Sign</strong>, then hold the sign for ~1 second.
+                </p>
+              )}
+            </div>
+
+            {/* Signs vocabulary reference */}
+            <div className="glass-card p-4">
+              <p className="label-xs mb-3">Available Signs</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["bad","drink","eat","friend","good","goodbye","help","no","please","school","sick","sorry","thank you","yes"].map((s) => (
+                  <span key={s}
+                    className={cn(
+                      "text-[10px] px-2 py-0.5 rounded-md border capitalize transition-colors",
+                      signResult?.sign.replace("_"," ") === s
+                        ? "bg-teal-500/20 border-teal-500/40 text-teal-300"
+                        : "bg-white/4 border-white/8 text-slate-500",
+                    )}>
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* ── Alphabet panel ── */
+          <>
+            {/* Current word */}
+            <div className="glass-card p-5">
+              <p className="label-xs mb-3">Current Sign</p>
+              <p className="text-4xl font-bold text-white min-h-[3rem] leading-tight drop-shadow-sm" style={{ fontFamily: "'Fira Code', monospace" }}>
+                {localWord || <span className="text-slate-600 font-normal text-xl">waiting…</span>}
+              </p>
+            </div>
+
+            {/* Translated text */}
+            <div className="glass-card p-5 flex-1">
+              <p className="label-xs mb-3">Translated Text</p>
+              <div className="text-[15px] text-white leading-relaxed break-words min-h-[5rem]">
+                {localSentence && <span className="text-slate-300">{localSentence}</span>}
+                {localWord && <span className="text-teal-400 font-semibold">{localWord}</span>}
+                {!fullText && <span className="text-slate-600 text-sm">Start signing to build words…</span>}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <button onClick={handleSpeak} disabled={!fullText} className="btn-primary flex-1">
+                <VolumeIcon className="w-4 h-4" /> Speak
               </button>
-            ))}
-          </div>
-        </div>
+              <button onClick={handleBackspace} title="Backspace" className="btn-ghost w-10 px-0">
+                <DeleteIcon className="w-4 h-4" />
+              </button>
+              <button onClick={handleClear} title="Clear" className="btn-danger w-10 px-0">
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Alphabet grid */}
+            <div className="glass-card p-4">
+              <p className="label-xs mb-3">Alphabet</p>
+              <div className="grid grid-cols-6 gap-1.5">
+                {"ABCDEFGHIKLMNOPQRSTUVWXY".split("").map((l) => (
+                  <button key={l}
+                    className={cn(
+                      "aspect-square flex items-center justify-center text-xs font-mono rounded-lg transition-all duration-200 cursor-pointer border",
+                      localLetter === l
+                        ? "bg-teal-500 text-navy-950 font-bold border-teal-300 shadow-[0_0_12px_rgba(45,212,191,0.6)] scale-110"
+                        : "bg-white/4 hover:bg-white/8 text-slate-400 hover:text-white border-white/6 hover:border-white/16",
+                    )}
+                    onClick={() => speak(l)}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

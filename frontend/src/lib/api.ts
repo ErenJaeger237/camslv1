@@ -81,6 +81,13 @@ export const triggerRetrain = () =>
 export const getRetrainStatus = () =>
   get<{ state: string; message: string; version: number }>("/api/retrain/status");
 
+// ── Word-sign inference ───────────────────────────────────────────────────────
+export const predictSign = (sequence: number[][]) =>
+  post<{ sign: string; confidence: number }>("/api/signs/predict", { sequence });
+
+export const getSignLabels = () =>
+  get<{ labels: string[] }>("/api/signs/labels");
+
 // ── Video Clip Dataset ─────────────────────────────────────────────────────────
 export async function uploadClip(
   blob: Blob,
